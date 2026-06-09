@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../../stores/auth';
 
@@ -11,6 +11,7 @@ export function LoginPage() {
   const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const isSubmitting = useRef(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,6 +26,10 @@ export function LoginPage() {
       return;
     }
 
+    // Prevent double-submit
+    if (isSubmitting.current || loading) return;
+    isSubmitting.current = true;
+
     setLoading(true);
     try {
       const success = await login(username, password);
@@ -34,9 +39,10 @@ export function LoginPage() {
         setError('用户名或密码错误');
       }
     } catch {
-      setError('登录失败，请重试');
+      setError('网络错误，请检查连接后重试');
     } finally {
       setLoading(false);
+      isSubmitting.current = false;
     }
   };
 
@@ -95,6 +101,7 @@ export function LoginPage() {
                 className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                 placeholder="请输入用户名"
                 autoComplete="username"
+                aria-label="用户名"
               />
             </div>
 
@@ -113,6 +120,7 @@ export function LoginPage() {
                 className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                 placeholder="请输入密码"
                 autoComplete="current-password"
+                aria-label="密码"
               />
             </div>
 
@@ -123,6 +131,7 @@ export function LoginPage() {
                   checked={rememberMe}
                   onChange={(e) => setRememberMe(e.target.checked)}
                   className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  aria-label="记住我"
                 />
                 <span className="text-sm text-gray-600">记住我</span>
               </label>
@@ -132,6 +141,7 @@ export function LoginPage() {
               type="submit"
               disabled={loading}
               className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 flex items-center justify-center gap-2"
+              aria-label="登录"
             >
               {loading && (
                 <svg

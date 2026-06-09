@@ -58,8 +58,12 @@ export function SetupWizard() {
       setError('请输入密码');
       return false;
     }
-    if (password.length < 6) {
-      setError('密码至少6个字符');
+    if (password.length < 8) {
+      setError('密码至少8个字符');
+      return false;
+    }
+    if (!/[a-z]/.test(password) || !/[A-Z]/.test(password)) {
+      setError('密码应包含大小写字母');
       return false;
     }
     if (password !== confirmPassword) {
@@ -358,6 +362,7 @@ function AccountStep({
             className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
             placeholder="至少3个字符"
             autoComplete="username"
+            aria-label="用户名"
           />
         </div>
 
@@ -372,8 +377,9 @@ function AccountStep({
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-              placeholder="至少6个字符"
+              placeholder="至少8个字符，含大小写"
               autoComplete="new-password"
+              aria-label="密码"
             />
           </div>
           <div>
@@ -388,9 +394,25 @@ function AccountStep({
               className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
               placeholder="再次输入密码"
               autoComplete="new-password"
+              aria-label="确认密码"
             />
           </div>
         </div>
+        {password && (
+          <div className="text-xs space-y-1">
+            <p className={password.length >= 8 ? 'text-green-600' : 'text-gray-400'}>
+              {password.length >= 8 ? '✓' : '○'} 至少8个字符
+            </p>
+            <p className={/[a-z]/.test(password) && /[A-Z]/.test(password) ? 'text-green-600' : 'text-gray-400'}>
+              {/[a-z]/.test(password) && /[A-Z]/.test(password) ? '✓' : '○'} 包含大小写字母
+            </p>
+            {confirmPassword && (
+              <p className={password === confirmPassword ? 'text-green-600' : 'text-red-500'}>
+                {password === confirmPassword ? '✓' : '✗'} 密码一致
+              </p>
+            )}
+          </div>
+        )}
 
         <div>
           <label htmlFor="setup-displayname" className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -403,6 +425,7 @@ function AccountStep({
             onChange={(e) => setDisplayName(e.target.value)}
             className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
             placeholder="例如：张三"
+            aria-label="显示名称"
           />
         </div>
 
@@ -418,6 +441,7 @@ function AccountStep({
             className="w-full px-3.5 py-2.5 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
             placeholder="admin@example.com"
             autoComplete="email"
+            aria-label="邮箱"
           />
         </div>
       </div>

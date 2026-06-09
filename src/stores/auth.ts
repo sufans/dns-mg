@@ -1,6 +1,11 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+// NOTE: This is a frontend-only demo. In production, password hashing and
+// credential storage should be handled by a proper backend with server-side
+// session management. The approaches used here (SHA-256 with username as salt,
+// base64 encoding) are NOT suitable for production use.
+
 interface User {
   id: string;
   username: string;
@@ -27,45 +32,48 @@ interface AuthState {
 interface TokenPayload {
   sub: string;
   username: string;
+  iss: string;
+  aud: string;
   exp: number;
   iat: number;
 }
 
-function xorCipher(text: string, key: string): string {
-  return text
-    .split('')
-    .map((char, i) => {
-      const keyChar = key.charCodeAt(i % key.length);
-      return String.fromCharCode(char.charCodeAt(0) ^ keyChar);
-    })
-    .join('');
+interface StoredCredentials {
+  username: string;
+  passwordHash: string;
 }
 
+async function hashPassword(password: string, salt: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password + salt);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Base64 encoding for localStorage obfuscation (NOT encryption)
 function encodeCredential(text: string): string {
-  const reversed = text.split('').reverse().join('');
-  return btoa(unescape(encodeURIComponent(reversed)));
+  return btoa(unescape(encodeURIComponent(text)));
 }
 
 function decodeCredential(encoded: string): string {
-  const reversed = decodeURIComponent(escape(atob(encoded)));
-  return reversed.split('').reverse().join('');
+  return decodeURIComponent(escape(atob(encoded)));
 }
 
 const CREDENTIALS_KEY = 'dns-mgr-credentials';
-const XOR_KEY = 'dns-mgr-xor-key-2024';
 
-function storeCredentials(username: string, password: string): void {
-  const data = xorCipher(JSON.stringify({ username, password }), XOR_KEY);
+function storeCredentials(username: string, passwordHash: string): void {
+  const data = JSON.stringify({ username, passwordHash });
   localStorage.setItem(CREDENTIALS_KEY, encodeCredential(data));
 }
 
-function getStoredCredentials(): { username: string; password: string } | null {
+function getStoredCredentials(): StoredCredentials | null {
   const encoded = localStorage.getItem(CREDENTIALS_KEY);
   if (!encoded) return null;
   try {
     const data = decodeCredential(encoded);
-    const parsed = JSON.parse(xorCipher(data, XOR_KEY));
-    if (typeof parsed.username === 'string' && typeof parsed.password === 'string') {
+    const parsed = JSON.parse(data);
+    if (typeof parsed.username === 'string' && typeof parsed.passwordHash === 'string') {
       return parsed;
     }
     return null;
@@ -78,6 +86,8 @@ function createToken(userId: string, username: string): string {
   const payload: TokenPayload = {
     sub: userId,
     username,
+    iss: 'dns-mgr',
+    aud: 'dns-mgr-app',
     exp: Date.now() + 86400000, // 24 hours
     iat: Date.now(),
   };
@@ -109,9 +119,10 @@ export const useAuthStore = create<AuthState>()(
         const stored = getStoredCredentials();
         if (!stored) return false;
 
-        if (stored.username !== username || stored.password !== password) {
-          return false;
-        }
+        if (stored.username !== username) return false;
+
+        const inputHash = await hashPassword(password, username);
+        if (stored.passwordHash !== inputHash) return false;
 
         const userId = stored.username;
         const token = createToken(userId, username);
@@ -152,7 +163,8 @@ export const useAuthStore = create<AuthState>()(
         await new Promise((resolve) => setTimeout(resolve, 500));
 
         const userId = data.username;
-        storeCredentials(data.username, data.password);
+        const passwordHash = await hashPassword(data.password, data.username);
+        storeCredentials(data.username, passwordHash);
 
         const token = createToken(userId, data.username);
         const user: User = {

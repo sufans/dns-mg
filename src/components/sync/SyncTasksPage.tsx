@@ -136,6 +136,8 @@ export function SyncTasksPage() {
   const [page, setPage] = useState(1);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const intervalsRef = useRef<ReturnType<typeof setInterval>[]>([]);
+  const timeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const activeTask = tasks.find((t) => t.status === 'running' || t.status === 'queued');
   const historyTasks = tasks.filter((t) => t.status !== 'running' && t.status !== 'queued');
@@ -156,6 +158,14 @@ export function SyncTasksPage() {
     }
   }, [dropdownOpen]);
 
+  // Cleanup all intervals and timeouts on unmount
+  useEffect(() => {
+    return () => {
+      intervalsRef.current.forEach(clearInterval);
+      timeoutsRef.current.forEach(clearTimeout);
+    };
+  }, []);
+
   // Simulated sync flow
   const startSync = useCallback((provider: ProviderType | 'all') => {
     setDropdownOpen(false);
@@ -171,47 +181,55 @@ export function SyncTasksPage() {
     };
     setTasks((prev) => [newTask, ...prev]);
 
+    const taskId = newTask.id;
+
     // After 1s, change to running
-    setTimeout(() => {
-      setTasks((prev) =>
-        prev.map((t) =>
-          t.id === newTask.id
+    const startTimeout = setTimeout(() => {
+      setTasks((prev) => {
+        const task = prev.find((t) => t.id === taskId);
+        if (!task || task.status !== 'queued') return prev;
+        return prev.map((t) =>
+          t.id === taskId
             ? { ...t, status: 'running', startedAt: new Date().toISOString(), progress: 0 }
             : t
-        )
-      );
+        );
+      });
 
       // Animate progress from 0 to 100 over 5 seconds
       const progressInterval = setInterval(() => {
         setTasks((prev) => {
-          const task = prev.find((t) => t.id === newTask.id);
+          const task = prev.find((t) => t.id === taskId);
           if (!task || task.status !== 'running') {
             clearInterval(progressInterval);
+            intervalsRef.current = intervalsRef.current.filter((id) => id !== progressInterval);
             return prev;
           }
           const nextProgress = Math.min(task.progress + 5, 100);
           if (nextProgress >= 100) {
             clearInterval(progressInterval);
+            intervalsRef.current = intervalsRef.current.filter((id) => id !== progressInterval);
             return prev.map((t) =>
-              t.id === newTask.id
+              t.id === taskId
                 ? { ...t, progress: 100, status: 'completed', completedAt: new Date().toISOString() }
                 : t
             );
           }
           return prev.map((t) =>
-            t.id === newTask.id ? { ...t, progress: nextProgress } : t
+            t.id === taskId ? { ...t, progress: nextProgress } : t
           );
         });
       }, 250);
+      intervalsRef.current.push(progressInterval);
 
       // Safety: complete after 6s if interval didn't finish
-      setTimeout(() => {
+      const safetyTimeout = setTimeout(() => {
         clearInterval(progressInterval);
+        intervalsRef.current = intervalsRef.current.filter((id) => id !== progressInterval);
         setTasks((prev) => {
-          const task = prev.find((t) => t.id === newTask.id);
+          const task = prev.find((t) => t.id === taskId);
           if (task && task.status === 'running') {
             return prev.map((t) =>
-              t.id === newTask.id
+              t.id === taskId
                 ? { ...t, progress: 100, status: 'completed', completedAt: new Date().toISOString() }
                 : t
             );
@@ -219,7 +237,9 @@ export function SyncTasksPage() {
           return prev;
         });
       }, 6000);
+      timeoutsRef.current.push(safetyTimeout);
     }, 1000);
+    timeoutsRef.current.push(startTimeout);
   }, []);
 
   const cancelTask = useCallback(() => {

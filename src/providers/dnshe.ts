@@ -341,9 +341,9 @@ export class DnsheProvider implements DomainProvider {
     } else {
       pagination = {
         page: params.page ?? 1,
-        size: params.size ?? raw.count,
+        size: params.size ?? 20,
         total: raw.count,
-        pages: 1,
+        pages: Math.ceil(raw.count / (params.size ?? 20)) || 1,
       };
     }
 
@@ -452,10 +452,10 @@ export class DnsheProvider implements DomainProvider {
       line: params.line || 'default',
       ttl: params.ttl ?? 600,
       priority: params.priority ?? null,
-      status: 'active',
+      status: 'active' as const,
       remark: params.remark ?? '',
-      updatedAt: null,
-      provider: 'dnshe',
+      updatedAt: new Date().toISOString(),
+      provider: 'dnshe' as const,
       recordId: raw.record_id,
       proxied: false,
     };
@@ -503,10 +503,10 @@ export class DnsheProvider implements DomainProvider {
       line: params.line ?? 'default',
       ttl: params.ttl ?? 600,
       priority: params.priority ?? null,
-      status: 'active',
+      status: 'active' as const,
       remark: params.remark ?? '',
-      updatedAt: null,
-      provider: 'dnshe',
+      updatedAt: new Date().toISOString(),
+      provider: 'dnshe' as const,
       recordId: raw.record_id,
       proxied: false,
     };
@@ -541,7 +541,7 @@ export class DnsheProvider implements DomainProvider {
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async toggleDnsRecordStatus(_recordId: string, _enabled: boolean): Promise<void> {
-    throw new Error('DNSHE does not support toggling DNS record status');
+    throw new Error('DNSHE provider does not support toggling DNS record status. This operation is not available for DNSHE domains.');
   }
 
   // --- Connection test ---
@@ -553,7 +553,8 @@ export class DnsheProvider implements DomainProvider {
       const result = await apiClient.request<DnsheQuotaResponse>(url, {
         headers: this.getAuthHeaders(),
       });
-      return result.success && result.data?.success === true;
+      if (!result.success) return false;
+      return result.data?.success === true;
     } catch {
       return false;
     }
@@ -607,7 +608,9 @@ export class DnsheProvider implements DomainProvider {
     return (raw.keys ?? []).map(k => ({
       id: k.id,
       keyName: k.key_name,
-      apiKey: k.api_key,
+      apiKey: k.api_key.length > 8
+        ? k.api_key.slice(0, 4) + '****' + k.api_key.slice(-4)
+        : '****',
       status: k.status,
       requestCount: k.request_count,
       lastUsedAt: k.last_used_at,

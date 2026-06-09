@@ -84,7 +84,7 @@ export function DashboardPage() {
     const providers = new Set(mockDomains.map((d) => d.provider));
 
     const lastSync = mockSyncTasks.find((t) => t.status === 'completed');
-    const lastSyncTimeAgo = lastSync ? formatTimeAgo(lastSync.completedAt!) : '无';
+    const lastSyncTimeAgo = lastSync?.completedAt ? formatTimeAgo(lastSync.completedAt) : '无';
     const hasFailedSync = mockSyncTasks.some((t) => t.status === 'failed');
 
     return {
@@ -96,18 +96,21 @@ export function DashboardPage() {
       lastSyncTimeAgo,
       syncHealthy: !hasFailedSync,
     };
-  }, []);
+  }, [mockDomains, mockRecords, mockSyncTasks]);
 
   const expiringDomains = useMemo(() => {
     return mockDomains
       .map((d) => ({ ...d, daysLeft: getDaysUntilExpiry(d.expireTime) }))
       .filter((d) => d.daysLeft !== null && d.daysLeft >= 0 && d.daysLeft <= 30)
       .sort((a, b) => (a.daysLeft ?? 0) - (b.daysLeft ?? 0));
-  }, []);
+  }, [mockDomains]);
 
-  const recentLogs = mockOperationLogs.slice(0, 5);
+  const recentLogs = useMemo(() => mockOperationLogs.slice(0, 5), [mockOperationLogs]);
 
-  const quotaPercent = Math.round((mockDnsheQuota.used / mockDnsheQuota.total) * 100);
+  const quotaPercent = useMemo(
+    () => Math.round((mockDnsheQuota.used / mockDnsheQuota.total) * 100),
+    [mockDnsheQuota]
+  );
 
   return (
     <div className="space-y-6">

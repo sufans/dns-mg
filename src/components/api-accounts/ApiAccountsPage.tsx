@@ -300,16 +300,16 @@ function PlatformCard({ platform }: { platform: PlatformInfo }) {
       const cred = entry.credentials as DnsheCredential;
       return (
         <div className="space-y-1 text-sm text-muted-foreground">
-          <div>API Key: {maskSecret(cred.apiKey)}</div>
-          <div>API Secret: {maskSecret(cred.apiSecret)}</div>
+          <div>API Key: {cred.apiKey ? maskSecret(cred.apiKey) : '未设置'}</div>
+          <div>API Secret: {cred.apiSecret ? maskSecret(cred.apiSecret) : '未设置'}</div>
         </div>
       );
     } else {
       const cred = entry.credentials as DnsnekoCredential;
       return (
         <div className="space-y-1 text-sm text-muted-foreground">
-          <div>用户名: {maskSecret(cred.username)}</div>
-          <div>API Key: {maskSecret(cred.apiKey)}</div>
+          <div>用户名: {cred.username ? maskSecret(cred.username) : '未设置'}</div>
+          <div>API Key: {cred.apiKey ? maskSecret(cred.apiKey) : '未设置'}</div>
         </div>
       );
     }

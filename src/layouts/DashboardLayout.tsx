@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -59,6 +59,8 @@ export function DashboardLayout() {
   const { user, logout } = useAuthStore();
   const location = useLocation();
   const navigate = useNavigate();
+  const sidebarRef = useRef<HTMLElement>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
 
   const pageTitle = getPageTitle(location.pathname);
 
@@ -75,6 +77,61 @@ export function DashboardLayout() {
 
   const closeSidebar = () => setSidebarOpen(false);
 
+  const openSidebar = () => {
+    previousFocusRef.current = document.activeElement as HTMLElement;
+    setSidebarOpen(true);
+  };
+
+  // Focus trap for mobile sidebar
+  useEffect(() => {
+    if (!sidebarOpen) return;
+
+    const sidebar = sidebarRef.current;
+    if (!sidebar) return;
+
+    // Focus the sidebar when it opens
+    const firstFocusable = sidebar.querySelector<HTMLElement>(
+      'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    firstFocusable?.focus();
+
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        closeSidebar();
+        previousFocusRef.current?.focus();
+        return;
+      }
+
+      if (e.key !== 'Tab') return;
+
+      const currentSidebar = sidebarRef.current;
+      if (!currentSidebar) return;
+
+      const focusableElements = currentSidebar.querySelectorAll<HTMLElement>(
+        'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusableElements.length === 0) return;
+
+      const firstEl = focusableElements[0];
+      const lastEl = focusableElements[focusableElements.length - 1];
+
+      if (e.shiftKey) {
+        if (document.activeElement === firstEl) {
+          e.preventDefault();
+          lastEl.focus();
+        }
+      } else {
+        if (document.activeElement === lastEl) {
+          e.preventDefault();
+          firstEl.focus();
+        }
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [sidebarOpen]);
+
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       {/* Mobile overlay - closes when clicking outside */}
@@ -87,6 +144,9 @@ export function DashboardLayout() {
 
       {/* Sidebar */}
       <aside
+        ref={sidebarRef}
+        role="navigation"
+        aria-label="主导航"
         className={cn(
           'fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-[hsl(var(--sidebar))] text-[hsl(var(--sidebar-foreground))] transition-transform duration-300 ease-in-out lg:static lg:translate-x-0',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
@@ -128,6 +188,7 @@ export function DashboardLayout() {
                 key={item.path}
                 to={item.path}
                 onClick={closeSidebar}
+                aria-label={item.label}
                 className={({ isActive }) =>
                   cn(
                     'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
@@ -176,7 +237,8 @@ export function DashboardLayout() {
               variant="ghost"
               size="icon"
               className="lg:hidden"
-              onClick={() => setSidebarOpen(true)}
+              onClick={openSidebar}
+              aria-label="打开侧边栏"
             >
               <Menu className="h-5 w-5" />
             </Button>
@@ -197,6 +259,8 @@ export function DashboardLayout() {
             <div className="relative">
               <button
                 onClick={() => setUserMenuOpen(!userMenuOpen)}
+                aria-label="用户菜单"
+                aria-expanded={userMenuOpen}
                 className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-accent transition-colors"
               >
                 <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-semibold">

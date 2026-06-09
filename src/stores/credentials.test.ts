@@ -279,8 +279,8 @@ describe('useCredentialsStore', () => {
       expect(maskSecret('short')).toBe('****');
     });
 
-    it('returns **** for empty string', () => {
-      expect(maskSecret('')).toBe('****');
+    it('returns empty string for empty string', () => {
+      expect(maskSecret('')).toBe('');
     });
 
     it('handles secrets just over 8 characters', () => {

@@ -108,6 +108,10 @@ export function SecuritySettingsPage() {
       setPwdError('请输入当前密码');
       return;
     }
+    if (!newPwd) {
+      setPwdError('请输入新密码');
+      return;
+    }
     if (newPwd.length < 8) {
       setPwdError('新密码至少需要 8 个字符');
       return;
@@ -177,7 +181,11 @@ export function SecuritySettingsPage() {
                 onChange={(e) => setNewPwd(e.target.value)}
                 placeholder="请输入新密码（至少 8 个字符）"
                 autoComplete="new-password"
+                error={!!newPwd && newPwd.length < 8}
               />
+              {newPwd && newPwd.length < 8 && (
+                <p className="text-xs text-destructive">密码至少需要 8 个字符</p>
+              )}
               {newPwd && (
                 <div className="space-y-1.5">
                   <div className="flex gap-1">

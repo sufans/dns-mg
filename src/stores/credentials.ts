@@ -21,20 +21,22 @@ interface CredentialsState {
 }
 
 export function maskSecret(secret: string): string {
+  if (!secret || secret.length === 0) return '';
   if (secret.length <= 8) return '****';
   const first4 = secret.slice(0, 4);
   const last4 = secret.slice(-4);
   return `${first4}****${last4}`;
 }
 
+// NOTE: Base64 encoding is NOT encryption. This is used only for obfuscation
+// in this frontend-only demo. In production, credentials should be stored
+// server-side with proper encryption.
 function encodeSecret(value: string): string {
-  const reversed = value.split('').reverse().join('');
-  return btoa(unescape(encodeURIComponent(reversed)));
+  return btoa(unescape(encodeURIComponent(value)));
 }
 
 function decodeSecret(encoded: string): string {
-  const reversed = decodeURIComponent(escape(atob(encoded)));
-  return reversed.split('').reverse().join('');
+  return decodeURIComponent(escape(atob(encoded)));
 }
 
 function encodeEntry(entry: CredentialEntry): CredentialEntry {

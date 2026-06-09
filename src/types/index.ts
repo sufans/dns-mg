@@ -1,5 +1,10 @@
 // Shared types for the DNS Manager application
 
+// Utility type: makes all fields non-nullable (removes null/undefined from all properties)
+export type NonNullableFields<T> = {
+  [P in keyof T]: NonNullable<T[P]>;
+};
+
 // Provider types
 export type ProviderType = 'dnshe' | 'dnsneko';
 

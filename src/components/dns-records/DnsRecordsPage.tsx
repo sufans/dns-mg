@@ -101,7 +101,7 @@ const TTL_OPTIONS = [
 ];
 
 const LINE_OPTIONS = [
-  { value: 'default', label: 'default' },
+  { value: '默认', label: '默认' },
   { value: 'telecom', label: 'telecom' },
   { value: 'unicom', label: 'unicom' },
   { value: 'mobile', label: 'mobile' },
@@ -154,7 +154,7 @@ const emptyForm: RecordFormData = {
   name: '',
   type: 'A',
   value: '',
-  line: 'default',
+  line: '默认',
   ttl: '600',
   priority: '',
   remark: '',
@@ -184,7 +184,7 @@ function RecordFormDialog({
           name: record.name,
           type: record.type,
           value: record.value,
-          line: record.line === '默认' ? 'default' : record.line,
+          line: record.line,
           ttl: String(record.ttl),
           priority: record.priority != null ? String(record.priority) : '',
           remark: record.remark || '',
@@ -354,7 +354,7 @@ function BatchLineDialog({
   onOpenChange: (open: boolean) => void;
   onConfirm: (line: string) => void;
 }) {
-  const [line, setLine] = React.useState('default');
+  const [line, setLine] = React.useState('默认');
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -750,25 +750,28 @@ export function DnsRecordsPage() {
     setTimeout(() => setToast(null), 3000);
   }
 
+  // Column callbacks (stable references)
+  const handleEdit = React.useCallback((r: UnifiedDnsRecord) => setEditRecord(r), []);
+  const handleDelete = React.useCallback((r: UnifiedDnsRecord) => setDeleteRecord(r), []);
+  const handleToggleStatus = React.useCallback(
+    (r: UnifiedDnsRecord) => {
+      if (provider === 'dnshe') {
+        showToast('DNSHE 平台暂不支持暂停/启用记录', 'error');
+        return;
+      }
+      const newStatus = r.status === 'active' ? 'paused' : 'active';
+      setRecords((prev) =>
+        prev.map((rec) => (rec.id === r.id ? { ...rec, status: newStatus } : rec))
+      );
+      showToast(newStatus === 'active' ? '记录已启用' : '记录已暂停');
+    },
+    [provider]
+  );
+
   // Column defs
   const columns = React.useMemo(
-    () =>
-      getColumns(
-        (r) => setEditRecord(r),
-        (r) => setDeleteRecord(r),
-        (r) => {
-          if (provider === 'dnshe') {
-            showToast('DNSHE 平台暂不支持暂停/启用记录', 'error');
-            return;
-          }
-          const newStatus = r.status === 'active' ? 'paused' : 'active';
-          setRecords((prev) =>
-            prev.map((rec) => (rec.id === r.id ? { ...rec, status: newStatus } : rec))
-          );
-          showToast(newStatus === 'active' ? '记录已启用' : '记录已暂停');
-        }
-      ),
-    [provider]
+    () => getColumns(handleEdit, handleDelete, handleToggleStatus),
+    [handleEdit, handleDelete, handleToggleStatus]
   );
 
   // Table instance
@@ -860,7 +863,7 @@ export function DnsRecordsPage() {
       name: data.name,
       type: data.type,
       value: data.value,
-      line: data.line === 'default' ? '默认' : data.line,
+      line: data.line,
       ttl: Number(data.ttl),
       priority: data.priority ? Number(data.priority) : null,
       status: 'active',
@@ -882,7 +885,7 @@ export function DnsRecordsPage() {
               name: data.name,
               type: data.type,
               value: data.value,
-              line: data.line === 'default' ? '默认' : data.line,
+              line: data.line,
               ttl: Number(data.ttl),
               priority: data.priority ? Number(data.priority) : null,
               remark: data.remark,
@@ -921,9 +924,8 @@ export function DnsRecordsPage() {
 
   function handleBatchLine(line: string) {
     const selectedIds = new Set(Object.keys(rowSelection).map((idx) => records[Number(idx)]?.id).filter(Boolean));
-    const displayLine = line === 'default' ? '默认' : line;
     setRecords((prev) =>
-      prev.map((r) => (selectedIds.has(r.id) ? { ...r, line: displayLine } : r))
+      prev.map((r) => (selectedIds.has(r.id) ? { ...r, line } : r))
     );
     setRowSelection({});
     showToast('已批量修改线路');
@@ -1025,10 +1027,7 @@ export function DnsRecordsPage() {
               <Select
                 options={[
                   { value: 'all', label: '全部线路' },
-                  { value: '默认', label: 'default' },
-                  { value: 'telecom', label: 'telecom' },
-                  { value: 'unicom', label: 'unicom' },
-                  { value: 'mobile', label: 'mobile' },
+                  ...LINE_OPTIONS,
                 ]}
                 value={lineFilter}
                 onChange={(e) => setLineFilter(e.target.value)}
@@ -1163,19 +1162,9 @@ export function DnsRecordsPage() {
               <DnsRecordCard
                 key={row.id}
                 record={row.original}
-                onEdit={(r) => setEditRecord(r)}
-                onDelete={(r) => setDeleteRecord(r)}
-                onToggleStatus={(r) => {
-                  if (provider === 'dnshe') {
-                    showToast('DNSHE 平台暂不支持暂停/启用记录', 'error');
-                    return;
-                  }
-                  const newStatus = r.status === 'active' ? 'paused' : 'active';
-                  setRecords((prev) =>
-                    prev.map((rec) => (rec.id === r.id ? { ...rec, status: newStatus } : rec))
-                  );
-                  showToast(newStatus === 'active' ? '记录已启用' : '记录已暂停');
-                }}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+                onToggleStatus={handleToggleStatus}
                 provider={provider as ProviderType}
               />
             ))}

@@ -105,16 +105,25 @@ export class DnsnekoProvider implements DomainProvider {
   }
 
   private getAuthHeaders(): Record<string, string> {
-    const headers: Record<string, string> = {};
-    if (this.username) headers['X-DNSNEKO-USERNAME'] = this.username;
-    if (this.apiKey) headers['X-DNSNEKO-API-KEY'] = this.apiKey;
-    return headers;
+    if (!this.username || !this.apiKey) {
+      throw new Error('DNSNeko API credentials not configured. Call setCredentials() first.');
+    }
+    return {
+      'X-DNSNEKO-USERNAME': this.username,
+      'X-DNSNEKO-API-KEY': this.apiKey,
+    };
   }
 
   private ensureCredentials(): void {
     if (!this.username || !this.apiKey) {
       throw new Error('DNSNeko API credentials not configured. Call setCredentials() first.');
     }
+  }
+
+  private toNumericId(id: string | number): string | number {
+    if (typeof id === 'number') return id;
+    const parsed = Number(id);
+    return isNaN(parsed) ? id : parsed;
   }
 
   private checkDnsnekoResponse<T>(response: DnsnekoResponse<T>, label: string): T {
@@ -222,7 +231,7 @@ export class DnsnekoProvider implements DomainProvider {
       page: parseInt(data.current) || 1,
       size: parseInt(data.size) || 20,
       total: parseInt(data.total) || 0,
-      pages: parseInt(data.pages) || 1,
+      pages: parseInt(data.pages) || Math.ceil((parseInt(data.total) || 0) / (parseInt(data.size) || 20)) || 1,
     };
 
     return { domains, pagination };
@@ -231,7 +240,7 @@ export class DnsnekoProvider implements DomainProvider {
   async getDomainDetail(domainId: string): Promise<UnifiedDomain> {
     this.ensureCredentials();
 
-    const url = `${BASE_URL}/domains/${encodeURIComponent(domainId)}`;
+    const url = `${BASE_URL}/domains/${domainId}`;
     const result = await apiClient.request<DnsnekoResponse<DnsnekoDomainDetailData>>(url, {
       headers: this.getAuthHeaders(),
     });
@@ -313,7 +322,23 @@ export class DnsnekoProvider implements DomainProvider {
     }
 
     const raw = result.data;
-    if (!raw) throw new Error('No data returned');
+    if (!raw) {
+      // API returned success but no data; construct record from params
+      return {
+        id: '',
+        domainId: params.domainId,
+        name: params.name,
+        type: params.type,
+        value: params.value,
+        line: params.line || 'default',
+        ttl: params.ttl ?? 600,
+        priority: params.priority ?? null,
+        status: 'active' as const,
+        remark: params.remark ?? '',
+        updatedAt: new Date().toISOString(),
+        provider: 'dnsneko' as const,
+      };
+    }
     this.checkDnsnekoResponse(raw, 'Create DNS record');
 
     return {
@@ -422,8 +447,8 @@ export class DnsnekoProvider implements DomainProvider {
       method: 'POST',
       headers: this.getAuthHeaders(),
       body: JSON.stringify({
-        domainId: Number(params.domainId) || params.domainId,
-        ids: params.ids.map(id => Number(id) || id),
+        domainId: this.toNumericId(params.domainId),
+        ids: params.ids.map(id => this.toNumericId(id)),
         status: params.status,
       }),
     });
@@ -445,8 +470,8 @@ export class DnsnekoProvider implements DomainProvider {
       method: 'POST',
       headers: this.getAuthHeaders(),
       body: JSON.stringify({
-        domainId: Number(params.domainId) || params.domainId,
-        ids: params.ids.map(id => Number(id) || id),
+        domainId: this.toNumericId(params.domainId),
+        ids: params.ids.map(id => this.toNumericId(id)),
       }),
     });
 
@@ -467,8 +492,8 @@ export class DnsnekoProvider implements DomainProvider {
       method: 'POST',
       headers: this.getAuthHeaders(),
       body: JSON.stringify({
-        domainId: Number(params.domainId) || params.domainId,
-        ids: params.ids.map(id => Number(id) || id),
+        domainId: this.toNumericId(params.domainId),
+        ids: params.ids.map(id => this.toNumericId(id)),
         ttl: params.ttl,
       }),
     });
@@ -490,8 +515,8 @@ export class DnsnekoProvider implements DomainProvider {
       method: 'POST',
       headers: this.getAuthHeaders(),
       body: JSON.stringify({
-        domainId: Number(params.domainId) || params.domainId,
-        ids: params.ids.map(id => Number(id) || id),
+        domainId: this.toNumericId(params.domainId),
+        ids: params.ids.map(id => this.toNumericId(id)),
         line: params.line,
       }),
     });
@@ -514,7 +539,8 @@ export class DnsnekoProvider implements DomainProvider {
       const result = await apiClient.request<DnsnekoResponse<DnsnekoDomainListData>>(url, {
         headers: this.getAuthHeaders(),
       });
-      return result.success && result.data?.code === 200;
+      if (!result.success) return false;
+      return result.data?.code === 200;
     } catch {
       return false;
     }

@@ -126,19 +126,33 @@ function expiryTag(expireTime: string | null) {
 
 // ── CSV Export ───────────────────────────────────────────────────────
 
+function sanitizeCsvCell(value: unknown): string {
+  const str = String(value ?? '');
+  // Prevent CSV injection: prefix cells starting with =, +, -, @ with a single quote
+  if (/^[=+\-@]/.test(str)) {
+    return `'${str}`;
+  }
+  return str;
+}
+
 function exportCSV(domains: UnifiedDomain[]) {
   const header = '域名,平台,状态,到期时间,记录数';
   const rows = domains.map((d) =>
-    [d.name, providerLabel(d.provider), statusLabel(d.status), formatExpiry(d.expireTime), d.recordCount].join(',')
+    [sanitizeCsvCell(d.name), sanitizeCsvCell(providerLabel(d.provider)), sanitizeCsvCell(statusLabel(d.status)), sanitizeCsvCell(formatExpiry(d.expireTime)), sanitizeCsvCell(d.recordCount)].join(',')
   );
   const csv = '\uFEFF' + [header, ...rows].join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `domains_${format(new Date(), 'yyyyMMdd_HHmmss')}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  try {
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `domains_${format(new Date(), 'yyyyMMdd_HHmmss')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch {
+    // Blob creation or download may fail in restricted environments
+    console.error('Failed to export CSV');
+  }
 }
 
 // ── Column Definitions ───────────────────────────────────────────────

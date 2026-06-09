@@ -542,7 +542,7 @@ describe('DnsheProvider', () => {
         priority: null,
         status: 'active',
         remark: '',
-        updatedAt: null,
+        updatedAt: expect.any(String),
         provider: 'dnshe',
         recordId: 'rec-new',
         proxied: false,
@@ -613,7 +613,7 @@ describe('DnsheProvider', () => {
     it('throws because DNSHE does not support toggling', async () => {
       provider.setCredentials({ apiKey: 'key', apiSecret: 'secret' });
       await expect(provider.toggleDnsRecordStatus('1', true)).rejects.toThrow(
-        'DNSHE does not support toggling DNS record status'
+        'DNSHE provider does not support toggling'
       );
     });
   });

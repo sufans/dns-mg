@@ -3,8 +3,31 @@ import type { ApiResponse } from '../types';
 class ApiClient {
   private rateLimiter = new Map<string, { count: number; resetAt: number }>();
   private maxRequestsPerMinute = 50;
+  private cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
-  private checkRateLimit(key: string): void {
+  constructor() {
+    // Periodically clean up expired rate limiter entries (older than 2 minutes)
+    this.cleanupInterval = setInterval(() => {
+      const now = Date.now();
+      for (const [key, entry] of this.rateLimiter) {
+        if (now >= entry.resetAt + 60000) {
+          this.rateLimiter.delete(key);
+        }
+      }
+    }, 120000);
+  }
+
+  private getRateLimitKey(url: string, method?: string): string {
+    try {
+      const parsed = new URL(url);
+      return `${method ?? 'GET'}:${parsed.host}${parsed.pathname}`;
+    } catch {
+      return `${method ?? 'GET'}:${url}`;
+    }
+  }
+
+  private checkRateLimit(url: string, method?: string): void {
+    const key = this.getRateLimitKey(url, method);
     const now = Date.now();
     const entry = this.rateLimiter.get(key);
     if (entry && now < entry.resetAt) {
@@ -22,7 +45,7 @@ class ApiClient {
     options: RequestInit = {},
     retries = 2
   ): Promise<ApiResponse<T>> {
-    this.checkRateLimit(url);
+    this.checkRateLimit(url, options.method);
 
     try {
       const response = await fetch(url, {
@@ -37,16 +60,25 @@ class ApiClient {
         const retryAfter = response.headers.get('Retry-After');
         const waitMs = retryAfter ? parseInt(retryAfter) * 1000 : 60000;
         if (retries > 0) {
-          await new Promise(resolve => setTimeout(resolve, Math.min(waitMs, 5000)));
+          const backoffMs = Math.min(waitMs, 5000) * Math.pow(2, 2 - retries);
+          await new Promise(resolve => setTimeout(resolve, backoffMs));
           return this.request<T>(url, options, retries - 1);
         }
         return { success: false, data: null, error: '请求过于频繁，请稍后重试', errorCode: 'RATE_LIMITED' };
       }
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        const errorMessage = errorData?.message || errorData?.error || `HTTP ${response.status}`;
-        const errorCode = errorData?.errorCode || errorData?.error_code || `HTTP_${response.status}`;
+        let errorMessage = `HTTP ${response.status}`;
+        let errorCode = `HTTP_${response.status}`;
+        try {
+          const errorData = await response.json();
+          if (errorData && typeof errorData === 'object') {
+            errorMessage = errorData.message || errorData.error || errorMessage;
+            errorCode = errorData.errorCode || errorData.error_code || errorCode;
+          }
+        } catch {
+          // Response body is not JSON; use default error message
+        }
         return { success: false, data: null, error: errorMessage, errorCode };
       }
 
@@ -54,7 +86,8 @@ class ApiClient {
       return { success: true, data: data as T, error: null, errorCode: null };
     } catch (error) {
       if (retries > 0 && error instanceof TypeError && error.message.includes('fetch')) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        const backoffMs = 1000 * Math.pow(2, 2 - retries);
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
         return this.request<T>(url, options, retries - 1);
       }
       return {
@@ -63,6 +96,13 @@ class ApiClient {
         error: error instanceof Error ? error.message : '未知错误',
         errorCode: 'NETWORK_ERROR',
       };
+    }
+  }
+
+  dispose(): void {
+    if (this.cleanupInterval !== null) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
     }
   }
 }
