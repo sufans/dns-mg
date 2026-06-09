@@ -242,4 +242,22 @@ describe('DnsnekoProvider', () => {
     const result = await provider.testConnection();
     expect(result).toBe(false);
   });
+
+  it('separate instances maintain independent credentials', async () => {
+    const provider1 = new DnsnekoProvider();
+    const provider2 = new DnsnekoProvider();
+
+    provider1.setCredentials({ username: 'user1', apiKey: 'key1' });
+    provider2.setCredentials({ username: 'user2', apiKey: 'key2' });
+
+    (apiClient.request as ReturnType<typeof vi.fn>).mockResolvedValue({
+      success: true,
+      data: { code: 200, message: 'ok', data: { domains: [], total: '0', size: '20', current: '1', pages: '0' } },
+    });
+
+    await provider1.testConnection();
+    const callArgs = (apiClient.request as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(callArgs[1].headers['X-DNSNEKO-USERNAME']).toBe('user1');
+    expect(callArgs[1].headers['X-DNSNEKO-API-KEY']).toBe('key1');
+  });
 });

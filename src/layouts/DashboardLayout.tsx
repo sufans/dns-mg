@@ -13,15 +13,18 @@ import {
   LogOut,
   ChevronDown,
   X,
+  AlertTriangle,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAuthStore } from '../stores/auth';
+import { useAlertsStore } from '../stores/alerts';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 
 const navItems: { label: string; icon: typeof LayoutDashboard; path: string; disabled?: boolean }[] = [
   { label: '仪表盘', icon: LayoutDashboard, path: '/dashboard' },
   { label: 'API 账号', icon: Key, path: '/accounts' },
+  { label: '告警中心', icon: AlertTriangle, path: '/alerts' },
   { label: '操作日志', icon: ScrollText, path: '/logs' },
   { label: '安全设置', icon: Shield, path: '/settings' },
 ];
@@ -50,6 +53,7 @@ export function DashboardLayout() {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const { isDark, toggle: toggleTheme } = useTheme();
   const { user, logout } = useAuthStore();
+  const unreadAlerts = useAlertsStore((s) => s.getUnreadCount());
   const location = useLocation();
   const navigate = useNavigate();
   const sidebarRef = useRef<HTMLElement>(null);
@@ -243,9 +247,11 @@ export function DashboardLayout() {
               {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
             </Button>
 
-            <Button variant="ghost" size="icon" className="relative" title="通知">
+            <Button variant="ghost" size="icon" className="relative" title="通知" onClick={() => navigate('/alerts')}>
               <Bell className="h-5 w-5" />
-              <Badge className="absolute -right-0.5 -top-0.5 h-4 min-w-4 px-1 text-[10px]">3</Badge>
+              {unreadAlerts > 0 && (
+                <Badge className="absolute -right-0.5 -top-0.5 h-4 min-w-4 px-1 text-[10px]">{unreadAlerts}</Badge>
+              )}
             </Button>
 
             {/* User dropdown */}

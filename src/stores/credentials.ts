@@ -1,6 +1,15 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { ProviderType, PlatformCredential, AccountEntry, AccountStatus, UsageStats } from '../types';
+import { encrypt, decrypt, isEncryptedData } from '../lib/crypto';
+import type { EncryptedData } from '../lib/crypto';
+
+// Application-level encryption key for credential storage.
+// In production, this should be derived from the user's session password via PBKDF2.
+const APP_KEY = 'dns-mgr-app-encryption-key-v1';
+
+// Check if Web Crypto API is available (not available in jsdom/Node.js < 19)
+const hasSubtleCrypto = typeof globalThis.crypto?.subtle !== 'undefined';
 
 // Generate unique ID
 function generateId(): string {
@@ -14,23 +23,9 @@ export function maskSecret(secret: string): string {
   return `${secret.slice(0, 4)}****${secret.slice(-4)}`;
 }
 
-// Base64 encode/decode for credential obfuscation
-// NOTE: This is NOT encryption. Production should use server-side encryption.
-function encodeSecret(value: string): string {
-  return btoa(unescape(encodeURIComponent(value)));
-}
-
+// Base64 decode for migration from old format
 function decodeSecret(encoded: string): string {
   return decodeURIComponent(escape(atob(encoded)));
-}
-
-function encodeCredentials(credentials: PlatformCredential, provider: ProviderType): PlatformCredential {
-  if (provider === 'dnshe') {
-    const c = credentials as { apiKey: string; apiSecret: string };
-    return { apiKey: encodeSecret(c.apiKey), apiSecret: encodeSecret(c.apiSecret) };
-  }
-  const c = credentials as { username: string; apiKey: string };
-  return { username: encodeSecret(c.username), apiKey: encodeSecret(c.apiKey) };
 }
 
 function decodeCredentials(credentials: PlatformCredential, provider: ProviderType): PlatformCredential {
@@ -42,12 +37,48 @@ function decodeCredentials(credentials: PlatformCredential, provider: ProviderTy
   return { username: decodeSecret(c.username), apiKey: decodeSecret(c.apiKey) };
 }
 
+// Base64 encode for fallback when crypto.subtle is unavailable
+function encodeSecret(value: string): string {
+  return btoa(unescape(encodeURIComponent(value)));
+}
+
+function encodeCredentials(credentials: PlatformCredential, provider: ProviderType): PlatformCredential {
+  if (provider === 'dnshe') {
+    const c = credentials as { apiKey: string; apiSecret: string };
+    return { apiKey: encodeSecret(c.apiKey), apiSecret: encodeSecret(c.apiSecret) };
+  }
+  const c = credentials as { username: string; apiKey: string };
+  return { username: encodeSecret(c.username), apiKey: encodeSecret(c.apiKey) };
+}
+
 function encodeEntry(entry: AccountEntry): AccountEntry {
   return { ...entry, credentials: encodeCredentials(entry.credentials, entry.provider) };
 }
 
 function decodeEntry(entry: AccountEntry): AccountEntry {
   return { ...entry, credentials: decodeCredentials(entry.credentials, entry.provider) };
+}
+
+// Check if a credential value looks like Base64
+function isBase64Value(value: string): boolean {
+  try {
+    return btoa(atob(value)) === value;
+  } catch {
+    return false;
+  }
+}
+
+// Check if credentials are in the old Base64 format
+function isBase64Credentials(credentials: unknown, provider: ProviderType): boolean {
+  if (typeof credentials !== 'object' || credentials === null) return false;
+  if (isEncryptedData(credentials)) return false;
+
+  if (provider === 'dnshe') {
+    const c = credentials as Record<string, unknown>;
+    return typeof c.apiKey === 'string' && typeof c.apiSecret === 'string' && isBase64Value(c.apiKey as string);
+  }
+  const c = credentials as Record<string, unknown>;
+  return typeof c.username === 'string' && typeof c.apiKey === 'string' && isBase64Value(c.username as string);
 }
 
 const EMPTY_USAGE_STATS: UsageStats = {
@@ -193,27 +224,82 @@ export const useCredentialsStore = create<CredentialsState>()(
     {
       name: 'dns-mgr-accounts',
       storage: {
-        getItem: (name) => {
+        getItem: async (name) => {
           const str = localStorage.getItem(name);
           if (!str) return null;
           const parsed = JSON.parse(str);
-          return {
-            ...parsed,
-            state: {
-              ...parsed.state,
-              accounts: (parsed.state.accounts as AccountEntry[]).map(decodeEntry),
-            },
-          };
+
+          if (!hasSubtleCrypto) {
+            // Fallback: try Base64 decoding for environments without crypto.subtle
+            try {
+              return {
+                ...parsed,
+                state: {
+                  ...parsed.state,
+                  accounts: (parsed.state.accounts as AccountEntry[]).map(decodeEntry),
+                },
+              };
+            } catch {
+              return parsed;
+            }
+          }
+
+          // AES-GCM decryption with Base64 migration
+          const accounts = await Promise.all(
+            (parsed.state.accounts as AccountEntry[]).map(async (entry) => {
+              // New AES-GCM encrypted format
+              if (isEncryptedData(entry.credentials)) {
+                try {
+                  const decrypted = await decrypt(entry.credentials as unknown as EncryptedData, APP_KEY);
+                  return { ...entry, credentials: JSON.parse(decrypted) as PlatformCredential };
+                } catch {
+                  // Decryption failed — return entry as-is
+                  return entry;
+                }
+              }
+
+              // Old Base64 format — migrate
+              if (isBase64Credentials(entry.credentials, entry.provider)) {
+                try {
+                  return { ...entry, credentials: decodeCredentials(entry.credentials, entry.provider) };
+                } catch {
+                  return entry;
+                }
+              }
+
+              // Plain text (shouldn't normally happen)
+              return entry;
+            })
+          );
+
+          return { ...parsed, state: { ...parsed.state, accounts } };
         },
-        setItem: (name, value) => {
-          const encoded = {
+        setItem: async (name, value) => {
+          if (!hasSubtleCrypto) {
+            // Fallback: Base64 encoding for environments without crypto.subtle
+            const encoded = {
+              ...value,
+              state: {
+                ...value.state,
+                accounts: (value.state.accounts as AccountEntry[]).map(encodeEntry),
+              },
+            };
+            localStorage.setItem(name, JSON.stringify(encoded));
+            return;
+          }
+
+          // AES-GCM encryption
+          const accounts = await Promise.all(
+            (value.state.accounts as AccountEntry[]).map(async (entry) => {
+              const encrypted = await encrypt(JSON.stringify(entry.credentials), APP_KEY);
+              return { ...entry, credentials: encrypted as unknown as PlatformCredential };
+            })
+          );
+
+          localStorage.setItem(name, JSON.stringify({
             ...value,
-            state: {
-              ...value.state,
-              accounts: (value.state.accounts as AccountEntry[]).map(encodeEntry),
-            },
-          };
-          localStorage.setItem(name, JSON.stringify(encoded));
+            state: { ...value.state, accounts },
+          }));
         },
         removeItem: (name) => {
           localStorage.removeItem(name);

@@ -1,9 +1,18 @@
 import type { ApiResponse } from '../types';
+import { useConfigStore } from '../stores/config';
+import { useAlertsStore } from '../stores/alerts';
 
 class ApiClient {
   private rateLimiter = new Map<string, { count: number; resetAt: number }>();
-  private maxRequestsPerMinute = 50;
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
+
+  private get maxRequests(): number {
+    try {
+      return useConfigStore.getState().rateLimitPerMinute;
+    } catch {
+      return 50;
+    }
+  }
 
   constructor() {
     // Periodically clean up expired rate limiter entries (older than 2 minutes)
@@ -31,7 +40,7 @@ class ApiClient {
     const now = Date.now();
     const entry = this.rateLimiter.get(key);
     if (entry && now < entry.resetAt) {
-      if (entry.count >= this.maxRequestsPerMinute) {
+      if (entry.count >= this.maxRequests) {
         throw new Error(`Rate limit exceeded for ${key}. Please wait and try again.`);
       }
       entry.count++;
@@ -57,6 +66,11 @@ class ApiClient {
       });
 
       if (response.status === 429) {
+        useAlertsStore.getState().addAlert({
+          type: 'rate_limit',
+          severity: 'warning',
+          message: `API 请求频率超限: ${url}`,
+        });
         const retryAfter = response.headers.get('Retry-After');
         const waitMs = retryAfter ? parseInt(retryAfter) * 1000 : 60000;
         if (retries > 0) {
@@ -68,6 +82,13 @@ class ApiClient {
       }
 
       if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          useAlertsStore.getState().addAlert({
+            type: 'credential_invalid',
+            severity: 'critical',
+            message: `API 认证失败 (${response.status}): ${url}`,
+          });
+        }
         let errorMessage = `HTTP ${response.status}`;
         let errorCode = `HTTP_${response.status}`;
         try {
@@ -108,3 +129,7 @@ class ApiClient {
 }
 
 export const apiClient = new ApiClient();
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => apiClient.dispose());
+}

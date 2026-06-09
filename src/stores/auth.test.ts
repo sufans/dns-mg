@@ -187,4 +187,38 @@ describe('useAuthStore', () => {
     useAuthStore.getState().updateProfile({ displayName: 'Test' });
     expect(useAuthStore.getState().user).toBeNull();
   });
+
+  it('changePassword succeeds with correct current password', async () => {
+    await useAuthStore.getState().initialize({
+      username: 'admin',
+      password: 'password123',
+      displayName: 'Admin',
+      email: 'admin@test.com',
+    });
+
+    const result = await useAuthStore.getState().changePassword('password123', 'NewPassword1');
+    expect(result).toBe(true);
+
+    // Verify can login with new password
+    useAuthStore.getState().logout();
+    const loginResult = await useAuthStore.getState().login('admin', 'NewPassword1');
+    expect(loginResult).toBe(true);
+  });
+
+  it('changePassword fails with wrong current password', async () => {
+    await useAuthStore.getState().initialize({
+      username: 'admin',
+      password: 'password123',
+      displayName: 'Admin',
+      email: 'admin@test.com',
+    });
+
+    const result = await useAuthStore.getState().changePassword('wrongpassword', 'NewPassword1');
+    expect(result).toBe(false);
+
+    // Verify old password still works
+    useAuthStore.getState().logout();
+    const loginResult = await useAuthStore.getState().login('admin', 'password123');
+    expect(loginResult).toBe(true);
+  });
 });

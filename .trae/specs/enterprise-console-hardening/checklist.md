@@ -1,0 +1,28 @@
+- [x] OperationLogsPage 模块存在且构建通过
+- [x] ESLint 零错误
+- [x] Provider 凭证隔离：并发 setCredentials 不互相覆盖
+- [x] 凭证使用 AES-GCM 加密存储，非 Base64 编码
+- [x] 旧 Base64 格式凭证自动迁移为 AES-GCM 格式
+- [x] SetupWizard 加密描述与实际实现一致
+- [x] 密码修改功能实际更新存储的密码哈希
+- [x] 当前密码错误时拒绝修改
+- [x] 全局配置（速率限制、超时、重试、存储方式、系统名称、时区、语言）持久化
+- [x] SetupWizard 步骤 3/4 配置写入 config store
+- [x] Dashboard 账号统计来自真实 store 数据
+- [x] Dashboard 配额数据通过 React Query 从 API 获取
+- [x] Dashboard 加载中显示骨架屏
+- [x] 告警中心页面存在且可访问
+- [x] 速率超限（429）自动生成告警
+- [x] 凭证失效（401/403）自动标记账号无效并生成告警
+- [x] 配额使用率 >80% 生成预警告警
+- [x] 告警可确认/标记已读
+- [x] 顶部状态栏显示未读告警徽章
+- [x] Cloudflare 适配配置面板在设置页展示
+- [x] 调用频率与运行限制面板展示各账号速率和配额
+- [x] 操作日志页面支持时间/类型/账号/结果筛选和分页
+- [x] useMediaQuery 不存在 effect 内同步 setState
+- [x] rememberMe 死代码已移除
+- [x] API Client cleanupInterval 可被正确清理
+- [x] 全部测试通过（vitest run）
+- [x] TypeScript 编译通过（tsc --noEmit）
+- [x] 生产构建通过（pnpm build）

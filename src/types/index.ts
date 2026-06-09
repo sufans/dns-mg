@@ -230,3 +230,18 @@ export interface SyncTask {
   completedAt: string | null;
   error: string | null;
 }
+
+// Alert types
+export type AlertType = 'rate_limit' | 'credential_invalid' | 'quota_warning' | 'system';
+export type AlertSeverity = 'info' | 'warning' | 'critical';
+
+export interface Alert {
+  id: string;
+  type: AlertType;
+  severity: AlertSeverity;
+  message: string;
+  accountId: string | null;
+  accountLabel: string | null;
+  createdAt: string;
+  acknowledged: boolean;
+}

@@ -1,0 +1,1 @@
+export { AlertCenterPage } from './AlertCenterPage';

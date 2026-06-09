@@ -25,6 +25,7 @@ interface AuthState {
   login: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
   initialize: (data: { username: string; password: string; displayName: string; email: string }) => Promise<boolean>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<boolean>;
   updateProfile: (data: Partial<Pick<User, 'displayName' | 'email'>>) => void;
   checkTokenExpiry: () => boolean;
 }
@@ -183,6 +184,21 @@ export const useAuthStore = create<AuthState>()(
           isAuthenticated: true,
           isInitialized: true,
         });
+
+        return true;
+      },
+
+      changePassword: async (currentPassword: string, newPassword: string): Promise<boolean> => {
+        const stored = getStoredCredentials();
+        if (!stored) return false;
+
+        // Verify current password
+        const currentHash = await hashPassword(currentPassword, stored.username);
+        if (currentHash !== stored.passwordHash) return false;
+
+        // Update with new password
+        const newPasswordHash = await hashPassword(newPassword, stored.username);
+        storeCredentials(stored.username, newPasswordHash);
 
         return true;
       },

@@ -1,6 +1,7 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import type { ProviderType, ProviderInfo, AccountEntry, PlatformCredential } from '../../types';
 import { useCredentialsStore, maskSecret } from '../../stores/credentials';
+import { useLogsStore } from '../../stores/logs';
 import { providerRegistry } from '../../providers/registry';
 import { DnsheProvider } from '../../providers/dnshe';
 import { DnsnekoProvider } from '../../providers/dnsneko';
@@ -119,7 +120,7 @@ function CredentialFieldDisplay({
 // --- Test Connection ---
 
 async function testAccountConnection(account: AccountEntry): Promise<boolean> {
-  const provider = providerRegistry.get(account.provider);
+  const provider = providerRegistry.createProvider(account.provider);
   if (!provider) return false;
 
   if (provider instanceof DnsheProvider) {
@@ -340,7 +341,7 @@ function AddAccountDialog({
     if (!selectedProvider || !providerInfo) return;
     setTesting(true);
     try {
-      const provider = providerRegistry.get(selectedProvider);
+      const provider = providerRegistry.createProvider(selectedProvider);
       if (!provider) return;
       if (provider instanceof DnsheProvider) {
         provider.setCredentials(credForm as unknown as import('../../types').DnsheCredential);
@@ -372,6 +373,7 @@ function AddAccountDialog({
       isDefault,
       credentials: credForm as unknown as PlatformCredential,
     });
+    useLogsStore.getState().recordOperation('add_account', newAccount.label, 'success');
     toast.success(`账号 ${newAccount.label} 已添加`);
     resetForm();
     onOpenChange(false);
@@ -503,9 +505,12 @@ function EditAccountDialog({
   const [isDefault, setIsDefault] = useState(false);
   const [testing, setTesting] = useState(false);
 
-  // Reset form when account changes
-  const resetForm = useCallback(() => {
-    if (!account) return;
+  // Initialize form when dialog opens or account changes
+  const [prevOpen, setPrevOpen] = useState(open);
+  const [prevAccount, setPrevAccount] = useState(account);
+  if (open && account && (open !== prevOpen || account !== prevAccount)) {
+    setPrevOpen(open);
+    setPrevAccount(account);
     const c = (account.credentials ?? {}) as unknown as Record<string, string>;
     const init: Record<string, string> = {};
     providerInfo?.credentialFields.forEach((f) => {
@@ -516,12 +521,7 @@ function EditAccountDialog({
     setTags(account.tags.join(', '));
     setIsDefault(account.isDefault);
     setTesting(false);
-  }, [account, providerInfo]);
-
-  // Initialize form when dialog opens or account changes
-  useEffect(() => {
-    if (open && account) resetForm();
-  }, [open, account, resetForm]);
+  }
 
   const isFormValid = useMemo(() => {
     if (!providerInfo) return false;
@@ -534,7 +534,7 @@ function EditAccountDialog({
     if (!account || !providerInfo) return;
     setTesting(true);
     try {
-      const provider = providerRegistry.get(account.provider);
+      const provider = providerRegistry.createProvider(account.provider);
       if (!provider) return;
       if (provider instanceof DnsheProvider) {
         provider.setCredentials(credForm as unknown as import('../../types').DnsheCredential);
@@ -555,7 +555,7 @@ function EditAccountDialog({
     } finally {
       setTesting(false);
     }
-  }, [account, providerInfo, credForm, updateAccountStatus]);
+  }, [account, providerInfo, credForm, updateAccountStatus, setTesting]);
 
   const handleSave = () => {
     if (!account || !isFormValid) return;
@@ -568,6 +568,7 @@ function EditAccountDialog({
       credentials: credForm as unknown as PlatformCredential,
       isDefault,
     });
+    useLogsStore.getState().recordOperation('edit_account', account.label, 'success');
     toast.success(`账号 ${label.trim() || account.label} 已更新`);
     onOpenChange(false);
   };
@@ -698,19 +699,23 @@ export function ApiAccountsPage() {
       const result = await testAccountConnection(account);
       if (result) {
         updateAccountStatus(account.id, 'valid');
+        useLogsStore.getState().recordOperation('test_connection', account.label, 'success', '连接测试成功');
         toast.success(`${account.label} 连接成功`);
       } else {
         updateAccountStatus(account.id, 'invalid');
+        useLogsStore.getState().recordOperation('test_connection', account.label, 'failure', '无法验证凭证');
         toast.error(`${account.label} 连接失败: 无法验证凭证`);
       }
     } catch (err) {
       updateAccountStatus(account.id, 'invalid');
+      useLogsStore.getState().recordOperation('test_connection', account.label, 'failure', err instanceof Error ? err.message : '未知错误');
       toast.error(`连接失败: ${err instanceof Error ? err.message : '未知错误'}`);
     }
   };
 
   const handleSetDefault = (account: AccountEntry) => {
     setDefaultAccount(account.id);
+    useLogsStore.getState().recordOperation('set_default', account.label, 'success');
     toast.success(`${account.label} 已设为默认账号`);
   };
 
@@ -718,6 +723,7 @@ export function ApiAccountsPage() {
     if (!deleteAccount) return;
     const label = deleteAccount.label;
     removeAccount(deleteAccount.id);
+    useLogsStore.getState().recordOperation('delete_account', label, 'success');
     toast.success(`账号 ${label} 已删除`);
     setDeleteAccount(null);
   };

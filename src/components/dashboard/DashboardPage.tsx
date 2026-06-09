@@ -30,12 +30,12 @@ import {
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
 import { Progress } from '../../components/ui/progress';
+import { CardSkeleton } from '../../components/feedback';
+import { RateLimitsPanel } from '../rate-limits';
 import { useCredentialsStore } from '../../stores/credentials';
-import {
-  mockDailyRequests,
-  mockOperationLogs,
-  mockDnsheQuota,
-} from '../../lib/mock-data';
+import { useLogsStore } from '../../stores/logs';
+import { useDnsheQuota } from '../../hooks/useDashboardData';
+import { mockDnsheQuota } from '../../lib/mock-data';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -94,15 +94,32 @@ export function DashboardPage() {
 
   // ── Derived stats ──────────────────────────────────────────────────
 
+  const dailyRequests = useMemo(() => {
+    const dayMap = new Map<string, number>();
+    for (const account of accounts) {
+      for (const dr of account.usageStats.dailyRequests) {
+        dayMap.set(dr.date, (dayMap.get(dr.date) || 0) + dr.count);
+      }
+    }
+    if (dayMap.size === 0) {
+      const days = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+      return days.map(d => ({ day: d, requests: 0 }));
+    }
+    return Array.from(dayMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .slice(-7)
+      .map(([date, count]) => ({ day: date, requests: count }));
+  }, [accounts]);
+
   const stats = useMemo(() => {
     const totalAccounts = accounts.length;
     const validAccounts = accounts.filter((a) => a.status === 'valid').length;
     const invalidAccounts = accounts.filter((a) => a.status === 'invalid').length;
     const unverifiedAccounts = accounts.filter((a) => a.status === 'unverified').length;
-    const todayRequests = mockDailyRequests.reduce((sum, d) => sum + d.requests, 0);
+    const todayRequests = dailyRequests.reduce((sum, d) => sum + d.requests, 0);
 
     return { totalAccounts, validAccounts, invalidAccounts, unverifiedAccounts, todayRequests };
-  }, [accounts]);
+  }, [accounts, dailyRequests]);
 
   // ── Pie chart data ─────────────────────────────────────────────────
 
@@ -117,13 +134,16 @@ export function DashboardPage() {
 
   // ── Recent logs ────────────────────────────────────────────────────
 
-  const recentLogs = useMemo(() => mockOperationLogs.slice(0, 5), []);
+  const logs = useLogsStore((s) => s.logs);
+  const recentLogs = useMemo(() => logs.slice(0, 5), [logs]);
 
   // ── Quota ──────────────────────────────────────────────────────────
 
+  const { data: dnsheQuota, isLoading: quotaLoading } = useDnsheQuota();
+  const quotaData = dnsheQuota ?? mockDnsheQuota;
   const quotaPercent = useMemo(
-    () => Math.round((mockDnsheQuota.used / mockDnsheQuota.total) * 100),
-    [],
+    () => quotaData ? Math.round((quotaData.used / quotaData.total) * 100) : 0,
+    [quotaData],
   );
 
   // ── Render ─────────────────────────────────────────────────────────
@@ -258,7 +278,7 @@ export function DashboardPage() {
           <CardContent>
             <div className="h-[220px]">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={mockDailyRequests} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                <AreaChart data={dailyRequests} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                   <defs>
                     <linearGradient id="requestGradient" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="hsl(217, 91%, 60%)" stopOpacity={0.3} />
@@ -300,6 +320,9 @@ export function DashboardPage() {
           </CardHeader>
           <CardContent className="space-y-5">
             {/* DNSHE */}
+            {quotaLoading ? (
+              <CardSkeleton />
+            ) : (
             <div>
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
@@ -307,16 +330,17 @@ export function DashboardPage() {
                   <span className="text-sm font-medium">域名配额</span>
                 </div>
                 <span className="text-xs text-muted-foreground">
-                  {mockDnsheQuota.used} / {mockDnsheQuota.total}
+                  {quotaData.used} / {quotaData.total}
                 </span>
               </div>
               <Progress value={quotaPercent} variant={quotaPercent > 80 ? 'warning' : 'primary'} />
               <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
-                <span>基础: {mockDnsheQuota.base}</span>
-                <span>邀请奖励: +{mockDnsheQuota.inviteBonus}</span>
-                <span>可用: {mockDnsheQuota.available}</span>
+                <span>基础: {quotaData.base}</span>
+                <span>邀请奖励: +{quotaData.inviteBonus}</span>
+                <span>可用: {quotaData.available}</span>
               </div>
             </div>
+            )}
 
             {/* DNSNeko */}
             <div>
@@ -368,6 +392,9 @@ export function DashboardPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ─── 5. Rate Limits Panel ─────────────────────────────── */}
+      <RateLimitsPanel />
     </div>
   );
 }

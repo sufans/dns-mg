@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '../../stores/auth';
+import { useLogsStore } from '../../stores/logs';
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -8,7 +9,6 @@ export function LoginPage() {
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const isSubmitting = useRef(false);
@@ -34,11 +34,14 @@ export function LoginPage() {
     try {
       const success = await login(username, password);
       if (success) {
+        useLogsStore.getState().recordOperation('login', username, 'success');
         navigate('/dashboard', { replace: true });
       } else {
+        useLogsStore.getState().recordOperation('login', username, 'failure', '密码错误');
         setError('用户名或密码错误');
       }
     } catch {
+      useLogsStore.getState().recordOperation('login', username, 'failure', '网络错误');
       setError('网络错误，请检查连接后重试');
     } finally {
       setLoading(false);
@@ -122,19 +125,6 @@ export function LoginPage() {
                 autoComplete="current-password"
                 aria-label="密码"
               />
-            </div>
-
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                  aria-label="记住我"
-                />
-                <span className="text-sm text-gray-600">记住我</span>
-              </label>
             </div>
 
             <button

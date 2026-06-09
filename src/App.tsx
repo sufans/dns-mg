@@ -5,6 +5,7 @@ import { DashboardLayout } from './layouts/DashboardLayout';
 import { DashboardPage } from './components/dashboard/DashboardPage';
 import { ApiAccountsPage } from './components/api-accounts';
 import { OperationLogsPage } from './components/logs';
+import { AlertCenterPage } from './components/alerts';
 import { SecuritySettingsPage } from './components/security';
 import { ErrorPage } from './components/ui/error-page';
 
@@ -42,6 +43,7 @@ function App() {
           <Route element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/accounts" element={<ApiAccountsPage />} />
+            <Route path="/alerts" element={<AlertCenterPage />} />
             <Route path="/logs" element={<OperationLogsPage />} />
             <Route path="/settings" element={<SecuritySettingsPage />} />
           </Route>

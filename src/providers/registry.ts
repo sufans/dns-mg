@@ -13,6 +13,14 @@ class ProviderRegistry {
     return this.providers.get(type);
   }
 
+  createProvider(type: string): DomainProvider | undefined {
+    switch (type) {
+      case 'dnshe': return new DnsheProvider();
+      case 'dnsneko': return new DnsnekoProvider();
+      default: return undefined;
+    }
+  }
+
   getAll(): DomainProvider[] {
     return Array.from(this.providers.values());
   }

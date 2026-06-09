@@ -168,4 +168,22 @@ describe('DnsheProvider', () => {
     const result = await provider.testConnection();
     expect(result).toBe(false);
   });
+
+  it('separate instances maintain independent credentials', async () => {
+    const provider1 = new DnsheProvider();
+    const provider2 = new DnsheProvider();
+
+    provider1.setCredentials({ apiKey: 'key1', apiSecret: 'secret1' });
+    provider2.setCredentials({ apiKey: 'key2', apiSecret: 'secret2' });
+
+    (apiClient.request as ReturnType<typeof vi.fn>).mockResolvedValue({
+      success: true,
+      data: { success: true, quota: { used: 0, base: 10, invite_bonus: 0, total: 10, available: 10 } },
+    });
+
+    await provider1.testConnection();
+    const callArgs = (apiClient.request as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(callArgs[1].headers['X-API-Key']).toBe('key1');
+    expect(callArgs[1].headers['X-API-Secret']).toBe('secret1');
+  });
 });

@@ -11,6 +11,8 @@ import {
 } from '../ui';
 import { useAuthStore } from '../../stores/auth';
 import { useCredentialsStore } from '../../stores/credentials';
+import { useConfigStore } from '../../stores/config';
+import { useLogsStore } from '../../stores/logs';
 import { toast } from 'sonner';
 
 // --- Password Strength ---
@@ -44,14 +46,16 @@ const storageOptions = [
 
 export function SecuritySettingsPage() {
   const user = useAuthStore((s) => s.user);
+  const changePassword = useAuthStore((s) => s.changePassword);
   const accountCount = useCredentialsStore((s) => s.accounts.length);
 
   // --- Section 1: API 请求配置 ---
-  const [rateLimit, setRateLimit] = useState('50');
-  const [requestTimeout, setRequestTimeout] = useState('10000');
-  const [autoRetry, setAutoRetry] = useState(true);
-  const [maxRetries, setMaxRetries] = useState('2');
-  const [credentialStorage, setCredentialStorage] = useState('local');
+  const config = useConfigStore();
+  const [rateLimit, setRateLimit] = useState(String(config.rateLimitPerMinute));
+  const [requestTimeout, setRequestTimeout] = useState(String(config.requestTimeout));
+  const [autoRetry, setAutoRetry] = useState(config.autoRetry);
+  const [maxRetries, setMaxRetries] = useState(String(config.maxRetries));
+  const [credentialStorage, setCredentialStorage] = useState<'local' | 'cloudflare'>(config.credentialStorage);
 
   const handleSaveConfig = () => {
     const rl = Number(rateLimit);
@@ -71,6 +75,14 @@ export function SecuritySettingsPage() {
       return;
     }
 
+    config.updateConfig({
+      rateLimitPerMinute: rl,
+      requestTimeout: to,
+      autoRetry,
+      maxRetries: mr,
+      credentialStorage: credentialStorage as 'local' | 'cloudflare',
+    });
+    useLogsStore.getState().recordOperation('update_settings', '系统设置', 'success');
     toast.success('配置已保存');
   };
 
@@ -81,7 +93,7 @@ export function SecuritySettingsPage() {
 
   const strength = getPasswordStrength(newPwd);
 
-  const handleUpdatePassword = () => {
+  const handleUpdatePassword = async () => {
     if (!currentPwd) {
       toast.error('请输入当前密码');
       return;
@@ -103,10 +115,17 @@ export function SecuritySettingsPage() {
       return;
     }
 
-    toast.success('密码已更新');
-    setCurrentPwd('');
-    setNewPwd('');
-    setConfirmPwd('');
+    const success = await changePassword(currentPwd, newPwd);
+    if (success) {
+      useLogsStore.getState().recordOperation('change_password', 'admin', 'success');
+      toast.success('密码已更新');
+      setCurrentPwd('');
+      setNewPwd('');
+      setConfirmPwd('');
+    } else {
+      useLogsStore.getState().recordOperation('change_password', 'admin', 'failure', '当前密码错误');
+      toast.error('当前密码错误');
+    }
   };
 
   return (
@@ -181,7 +200,7 @@ export function SecuritySettingsPage() {
               <Select
                 options={storageOptions}
                 value={credentialStorage}
-                onChange={(e) => setCredentialStorage(e.target.value)}
+                onChange={(e) => setCredentialStorage(e.target.value as 'local' | 'cloudflare')}
               />
             </div>
             <Button onClick={handleSaveConfig}>保存配置</Button>
@@ -189,7 +208,93 @@ export function SecuritySettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Section 2: 修改密码 */}
+      {/* Section 2: Cloudflare 适配配置 */}
+      <Card className="rounded-xl">
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <CardTitle className="text-lg">Cloudflare 适配配置</CardTitle>
+            {credentialStorage === 'cloudflare' ? (
+              <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                已配置
+              </span>
+            ) : (
+              <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-muted text-muted-foreground">
+                未启用
+              </span>
+            )}
+          </div>
+          <CardDescription>配置 Cloudflare 部署环境与 Secrets 存储</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="w-full max-w-md space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">存储方式</label>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setCredentialStorage('local')}
+                  className={`rounded-lg border p-3 text-left transition-colors ${
+                    credentialStorage === 'local'
+                      ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                      : 'border-border hover:border-primary/50'
+                  }`}
+                >
+                  <span className="text-sm font-medium">本地存储</span>
+                  <p className="text-xs text-muted-foreground mt-0.5">凭证存储在浏览器本地</p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCredentialStorage('cloudflare')}
+                  className={`rounded-lg border p-3 text-left transition-colors ${
+                    credentialStorage === 'cloudflare'
+                      ? 'border-primary bg-primary/5 ring-1 ring-primary'
+                      : 'border-border hover:border-primary/50'
+                  }`}
+                >
+                  <span className="text-sm font-medium">Cloudflare Secrets</span>
+                  <p className="text-xs text-muted-foreground mt-0.5">凭证通过 Workers Secrets 安全存储</p>
+                </button>
+              </div>
+            </div>
+
+            {credentialStorage === 'cloudflare' && (
+              <div className="p-4 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
+                <h4 className="text-sm font-medium text-blue-900 dark:text-blue-200 mb-2">Cloudflare 配置指引</h4>
+                <ol className="text-sm text-blue-800 dark:text-blue-300 space-y-1 list-decimal list-inside">
+                  <li>在 Cloudflare Dashboard 中创建 Workers 项目</li>
+                  <li>使用 wrangler CLI 设置 Secrets: <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">wrangler secret put DNSHE_API_KEY</code></li>
+                  <li>设置所有需要的 Secrets: DNSHE_API_SECRET, DNSNEKO_USERNAME, DNSNEKO_API_KEY</li>
+                  <li>部署项目至 Cloudflare Pages 或 Workers</li>
+                </ol>
+                <p className="mt-2 text-xs text-blue-700 dark:text-blue-400">
+                  凭证将通过 Cloudflare Workers Secrets 安全存储，仅服务端可访问。
+                </p>
+              </div>
+            )}
+
+            <div className="mt-4 space-y-2">
+              <h4 className="text-sm font-medium">环境变量</h4>
+              <div className="space-y-1">
+                {[
+                  { name: 'DNSHE_API_KEY', desc: 'DNSHE API Key' },
+                  { name: 'DNSHE_API_SECRET', desc: 'DNSHE API Secret' },
+                  { name: 'DNSNEKO_USERNAME', desc: 'DNSNeko 用户名' },
+                  { name: 'DNSNEKO_API_KEY', desc: 'DNSNeko API Key' },
+                ].map((env) => (
+                  <div key={env.name} className="flex items-center justify-between text-sm py-1 border-b border-dashed">
+                    <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{env.name}</code>
+                    <span className="text-muted-foreground">{env.desc}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <Button onClick={handleSaveConfig}>保存配置</Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Section 3: 修改密码 */}
       <Card className="rounded-xl">
         <CardHeader>
           <CardTitle className="text-lg">修改密码</CardTitle>
@@ -265,7 +370,7 @@ export function SecuritySettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Section 3: 系统信息 */}
+      {/* Section 4: 系统信息 */}
       <Card className="rounded-xl">
         <CardHeader>
           <CardTitle className="text-lg">系统信息</CardTitle>

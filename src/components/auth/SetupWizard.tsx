@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../stores/auth';
+import { useConfigStore } from '../../stores/config';
 
 const STEPS = [
   { id: 1, title: '欢迎' },
@@ -109,6 +110,13 @@ export function SetupWizard() {
         email: email.trim(),
       });
       if (success) {
+        // Persist step 3/4 config
+        useConfigStore.getState().updateConfig({
+          systemName,
+          timezone,
+          language,
+          credentialStorage: storageMethod,
+        });
         navigate('/dashboard', { replace: true });
       } else {
         setError('初始化失败，请重试');
