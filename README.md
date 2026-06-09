@@ -87,7 +87,8 @@ pnpm test
 
 ### 凭证安全
 
-- API 凭证使用 Base64 编码存储于浏览器 localStorage
+- API 凭证使用 **AES-GCM 加密**存储于浏览器 localStorage（密钥通过 PBKDF2 派生）
+- 旧版 Base64 编码凭证会自动迁移至 AES-GCM 加密格式
 - 界面默认脱敏显示（`cfsd****xxxx`）
 - 点击眼睛图标可切换明文/脱敏显示
 - **生产环境建议**：使用 Cloudflare Secrets 或后端加密存储
@@ -108,11 +109,26 @@ cp .env.example .env.local
 
 ## Cloudflare 部署
 
-### Dashboard 部署（推荐）
+DNS Manager 原生支持 Cloudflare 部署，支持 **Pages** 和 **Workers** 两种模式。
 
-1. 推送代码到 GitHub
-2. Cloudflare Dashboard → Workers & Pages → Create → Pages → Connect to Git
-3. 构建设置：
+### 部署模式对比
+
+| 模式 | 凭证存储 | 适用场景 | 复杂度 |
+|------|----------|----------|--------|
+| **Pages（纯前端）** | localStorage AES-GCM 加密 | 个人/小团队 | 低 |
+| **Workers（推荐）** | Cloudflare Secrets | 企业/多用户 | 中 |
+
+---
+
+### 模式一：Cloudflare Pages（纯前端）
+
+凭证存储在浏览器 localStorage 中，使用 AES-GCM 加密。适合个人使用或不需要后端代理的场景。
+
+#### Dashboard 部署（推荐）
+
+1. Fork 本仓库到 GitHub
+2. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com) → Workers & Pages → Create → Pages → Connect to Git
+3. 选择 Fork 的仓库，构建设置：
 
 | 配置项 | 值 |
 |--------|-----|
@@ -120,21 +136,240 @@ cp .env.example .env.local
 | Build command | `pnpm build` |
 | Build output | `dist` |
 
-4. 部署后访问 `https://dns-mg.pages.dev`
+4. 点击「Save and Deploy」，等待构建完成
+5. 部署后访问 `https://<project-name>.pages.dev`
 
-### Wrangler CLI 部署
+#### Wrangler CLI 部署
 
 ```bash
-pnpm add -g wrangler && wrangler login
+# 安装 wrangler 并登录
+pnpm add -g wrangler
+wrangler login
+
+# 构建
+pnpm install
+pnpm build
+
+# 部署到 Pages
+wrangler pages deploy dist --project-name=dns-mg
+```
+
+---
+
+### 模式二：Cloudflare Workers（推荐）
+
+使用 Cloudflare Workers 作为后端代理，API 凭证存储在 **Cloudflare Secrets** 中，前端不存储任何凭证。适合企业环境或需要更高安全性的场景。
+
+#### 架构
+
+```
+浏览器 ──→ Cloudflare Workers ──→ DNSHE / DNSNeko API
+              │
+              └── Secrets (API 凭证)
+```
+
+#### 1. 创建 Workers 项目
+
+```bash
+# 创建项目目录
+mkdir dns-mgr-worker && cd dns-mgr-worker
+
+# 初始化
+wrangler init --yes
+```
+
+#### 2. 配置 Secrets
+
+```bash
+# 设置 DNSHE 凭证
+wrangler secret put DNSHE_API_KEY
+# 输入你的 DNSHE API Key
+
+wrangler secret put DNSHE_API_SECRET
+# 输入你的 DNSHE API Secret
+
+# 设置 DNSNeko 凭证（如有）
+wrangler secret put DNSNEKO_USERNAME
+wrangler secret put DNSNEKO_API_KEY
+```
+
+#### 3. 编写 Worker 代理（`src/index.ts`）
+
+```typescript
+export interface Env {
+  DNSHE_API_KEY: string;
+  DNSHE_API_SECRET: string;
+  DNSNEKO_USERNAME: string;
+  DNSNEKO_API_KEY: string;
+}
+
+const DNSHE_API_URL = 'https://api005.dnshe.com/index.php';
+const DNSNEKO_API_URL = 'https://www.dnsneko.com/api/v1/dns';
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    const path = url.pathname;
+
+    // CORS 预检
+    if (request.method === 'OPTIONS') {
+      return new Response(null, {
+        headers: {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+        },
+      });
+    }
+
+    let targetUrl: string;
+    let headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    if (path.startsWith('/api/dnshe')) {
+      targetUrl = `${DNSHE_API_URL}${path.replace('/api/dnshe', '')}`;
+      headers['X-API-Key'] = env.DNSHE_API_KEY;
+      headers['X-API-Secret'] = env.DNSHE_API_SECRET;
+    } else if (path.startsWith('/api/dnsneko')) {
+      targetUrl = `${DNSNEKO_API_URL}${path.replace('/api/dnsneko', '')}`;
+      headers['X-Username'] = env.DNSNEKO_USERNAME;
+      headers['X-API-Key'] = env.DNSNEKO_API_KEY;
+    } else {
+      return new Response('Not Found', { status: 404 });
+    }
+
+    const response = await fetch(targetUrl, {
+      method: request.method,
+      headers,
+      body: request.method !== 'GET' ? await request.text() : undefined,
+    });
+
+    const corsHeaders = {
+      'Access-Control-Allow-Origin': '*',
+      'Content-Type': 'application/json',
+    };
+
+    return new Response(response.body, {
+      status: response.status,
+      headers: corsHeaders,
+    });
+  },
+};
+```
+
+#### 4. 部署 Worker
+
+```bash
+wrangler deploy
+```
+
+#### 5. 前端配置
+
+部署前端到 Cloudflare Pages 时，设置环境变量：
+
+```bash
+# .env.production
+VITE_API_PROXY_URL=https://dns-mgr-worker.<your-subdomain>.workers.dev
+```
+
+在应用设置中将「凭证存储方式」切换为 **Cloudflare Secrets**（设置 → Cloudflare 适配配置）。
+
+---
+
+### 模式三：Pages + Functions（混合部署）
+
+使用 Cloudflare Pages 的 Functions 功能（基于 Workers），在同一个项目中同时部署前端和后端代理。
+
+#### 1. 项目结构
+
+```
+dns-mg/
+├── functions/           # Pages Functions（后端代理）
+│   ├── api/
+│   │   ├── dnshe/[[path]].ts
+│   │   └── dnsneko/[[path]].ts
+│   └── _middleware.ts   # CORS 中间件
+├── src/                 # React 前端
+├── dist/                # 构建输出
+└── wrangler.toml
+```
+
+#### 2. Functions 代理（`functions/api/dnshe/[[path]].ts`）
+
+```typescript
+interface Env {
+  DNSHE_API_KEY: string;
+  DNSHE_API_SECRET: string;
+}
+
+export const onRequest: PagesFunction<Env> = async (context) => {
+  const { request, env } = context;
+  const url = new URL(request.url);
+  const path = url.pathname.replace('/api/dnshe', '');
+  const targetUrl = `https://api005.dnshe.com/index.php${path}`;
+
+  const response = await fetch(targetUrl, {
+    method: request.method,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': env.DNSHE_API_KEY,
+      'X-API-Secret': env.DNSHE_API_SECRET,
+    },
+    body: request.method !== 'GET' ? await request.text() : undefined,
+  });
+
+  return new Response(response.body, {
+    status: response.status,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+    },
+  });
+};
+```
+
+#### 3. CORS 中间件（`functions/_middleware.ts`）
+
+```typescript
+export const onRequest: PagesFunction = async (context) => {
+  const response = await context.next();
+  response.headers.set('Access-Control-Allow-Origin', '*');
+  response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  response.headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  return response;
+};
+```
+
+#### 4. 配置 wrangler.toml
+
+```toml
+name = "dns-mg"
+compatibility_date = "2024-01-01"
+
+[env.production]
+# Secrets 通过 wrangler secret put 设置
+```
+
+#### 5. 部署
+
+```bash
+# 设置 Secrets
+wrangler pages secret put DNSHE_API_KEY --project-name=dns-mg
+wrangler pages secret put DNSHE_API_SECRET --project-name=dns-mg
+
+# 构建并部署
 pnpm build
 wrangler pages deploy dist --project-name=dns-mg
 ```
+
+---
 
 ### GitHub Actions 自动部署
 
 ```yaml
 # .github/workflows/deploy.yml
-name: Deploy
+name: Deploy to Cloudflare
 on:
   push:
     branches: [main]
@@ -157,6 +392,9 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           command: pages deploy dist --project-name=dns-mg
 ```
+
+需要配置 GitHub Secrets：
+- `CLOUDFLARE_API_TOKEN`：在 Cloudflare Dashboard → My Profile → API Tokens → Create Token → Custom token（Zone:Read, Cloudflare Pages:Edit）
 
 ## 常见问题
 
