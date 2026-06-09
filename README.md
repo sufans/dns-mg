@@ -172,36 +172,3 @@ jobs:
 ## 许可证
 
 MIT
-# DNS Manager - 企业级 DNS# DNS Manager - 企业级 DNS API 账号管理后台
-
-> 面向# DNS Manager - 企业级 DNS API 账号管理后台
-
-> 面向 Cloudflare 原生部署的多平台 DNS API# DNS Manager - 企业级 DNS API 账号管理后台
-
-> 面向 Cloudflare 原生部署的多平台 DNS API 账号管理后台，集中管理 DNSHE 与# DNS Manager - 企业级 DNS API 账号管理后台
-
-> 面向 Cloudflare 原生部署的多平台 DNS API 账号管理后台，集中管理 DNSHE 与 DNSNeko 凭证、状态监控、风控# DNS Manager - 企业级 DNS API 账号管理后台
-
-> 面向 Cloudflare 原生部署的多平台 DNS API 账号管理后台，集中管理 DNSHE 与 DNSNeko 凭证、状态监控、风控告警与使用统计。采用企业级控制台布局# DNS Manager - 企业级 DNS API 账号管理后台
-
-> 面向 Cloudflare 原生部署的多平台 DNS API 账号管理后台，集中管理 DNSHE 与 DNSNeko 凭证、状态监控、风控告警与使用统计。采用企业级控制台布局，支持深色/浅色科技风主题。
-# DNS Manager - 企业级 DNS API 账号管理后台
-
-> 面向 Cloudflare 原生部署的多平台 DNS API 账号管理后台，集中管理 DNSHE 与 DNSNeko 凭证、状态监控、风控告警与使用统计。采用企业级控制台布局，支持深色/浅色科技风主题。
-
-## 功能特性
-
-- **多# DNS Manager - 企业级 DNS API 账号管理后台
-
-> 面向 Cloudflare 原生部署的多平台 DNS API 账号管理后台，集中管理 DNSHE 与 DNSNeko 凭证、状态监控、风控告警与使用统计。采用企业级控制台布局，支持深色/浅色科技风主题。
-
-## 功能特性
-
-- **多平台账号管理** — 支持 DNSHE、DNSNeko 双平台，同平台多# DNS Manager - 企业级 DNS API 账号管理后台
-
-> 面向 Cloudflare 原生部署的多平台 DNS API 账号管理后台，集中管理 DNSHE 与 DNSNeko 凭证、状态监控、风控告警与使用统计。采用企业级控制台布局，支持深色/浅色科技风主题。
-
-## 功能特性
-
-- **多平台账号管理** — 支持 DNSHE、DNSNeko 双平台，同平台多账号独立管理
-- **凭证安全加密**
