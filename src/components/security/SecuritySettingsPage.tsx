@@ -7,10 +7,11 @@ import {
   CardDescription,
   CardContent,
   Input,
-  Badge,
-  ConfirmDialog,
+  Select,
 } from '../ui';
 import { useAuthStore } from '../../stores/auth';
+import { useCredentialsStore } from '../../stores/credentials';
+import { toast } from 'sonner';
 
 // --- Password Strength ---
 function getPasswordStrength(pwd: string): { label: string; level: number; color: string } {
@@ -30,133 +31,166 @@ function getPasswordStrength(pwd: string): { label: string; level: number; color
   return { label: '弱', level: 1, color: 'bg-red-500' };
 }
 
-// --- Mock Sessions ---
-interface Session {
-  id: string;
-  device: string;
-  browser: string;
-  ip: string;
-  lastActive: string;
-  current: boolean;
-}
-
-const mockSessions: Session[] = [
-  {
-    id: 's1',
-    device: 'Desktop',
-    browser: 'Chrome 126',
-    ip: '192.168.1.100',
-    lastActive: '2026-06-09T14:30:00Z',
-    current: true,
-  },
-  {
-    id: 's2',
-    device: 'Mobile',
-    browser: 'Safari 18',
-    ip: '10.0.0.55',
-    lastActive: '2026-06-08T20:15:00Z',
-    current: false,
-  },
-];
-
 function formatTime(ts: string): string {
   const d = new Date(ts);
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function DeviceIcon({ device }: { device: string }) {
-  if (device === 'Mobile') {
-    return (
-      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></svg>
-    );
-  }
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg>
-  );
-}
+const storageOptions = [
+  { value: 'local', label: '本地存储' },
+  { value: 'cloudflare', label: 'Cloudflare Secrets' },
+];
 
 export function SecuritySettingsPage() {
   const user = useAuthStore((s) => s.user);
+  const accountCount = useCredentialsStore((s) => s.accounts.length);
 
-  // Password section
+  // --- Section 1: API 请求配置 ---
+  const [rateLimit, setRateLimit] = useState('50');
+  const [requestTimeout, setRequestTimeout] = useState('10000');
+  const [autoRetry, setAutoRetry] = useState(true);
+  const [maxRetries, setMaxRetries] = useState('2');
+  const [credentialStorage, setCredentialStorage] = useState('local');
+
+  const handleSaveConfig = () => {
+    const rl = Number(rateLimit);
+    const to = Number(requestTimeout);
+    const mr = Number(maxRetries);
+
+    if (!rl || rl < 1) {
+      toast.error('速率限制必须大于 0');
+      return;
+    }
+    if (!to || to < 1000) {
+      toast.error('超时时间不能小于 1000ms');
+      return;
+    }
+    if (autoRetry && (!mr || mr < 1)) {
+      toast.error('最大重试次数必须大于 0');
+      return;
+    }
+
+    toast.success('配置已保存');
+  };
+
+  // --- Section 2: 修改密码 ---
   const [currentPwd, setCurrentPwd] = useState('');
   const [newPwd, setNewPwd] = useState('');
   const [confirmPwd, setConfirmPwd] = useState('');
-  const [pwdError, setPwdError] = useState('');
-  const [pwdSuccess, setPwdSuccess] = useState('');
-
-  // Rate limit section
-  const [globalRateLimit, setGlobalRateLimit] = useState('50');
-  const [dnsheInterval, setDnsheInterval] = useState('1000');
-  const [dnsnekoInterval, setDnsnekoInterval] = useState('1000');
-  const [autoRetry, setAutoRetry] = useState(true);
-  const [maxRetries, setMaxRetries] = useState('2');
-  const [rateLimitSuccess, setRateLimitSuccess] = useState('');
-
-  // Session section
-  const [sessions, setSessions] = useState<Session[]>(mockSessions);
-  const [logoutAllOpen, setLogoutAllOpen] = useState(false);
 
   const strength = getPasswordStrength(newPwd);
 
   const handleUpdatePassword = () => {
-    setPwdError('');
-    setPwdSuccess('');
-
     if (!currentPwd) {
-      setPwdError('请输入当前密码');
+      toast.error('请输入当前密码');
       return;
     }
     if (!newPwd) {
-      setPwdError('请输入新密码');
+      toast.error('请输入新密码');
       return;
     }
     if (newPwd.length < 8) {
-      setPwdError('新密码至少需要 8 个字符');
+      toast.error('新密码至少需要 8 个字符');
       return;
     }
     if (newPwd !== confirmPwd) {
-      setPwdError('两次输入的密码不一致');
+      toast.error('两次输入的密码不一致');
       return;
     }
     if (newPwd === currentPwd) {
-      setPwdError('新密码不能与当前密码相同');
+      toast.error('新密码不能与当前密码相同');
       return;
     }
 
-    // Simulate success
-    setPwdSuccess('密码已更新');
+    toast.success('密码已更新');
     setCurrentPwd('');
     setNewPwd('');
     setConfirmPwd('');
-  };
-
-  const handleSaveRateLimit = () => {
-    setRateLimitSuccess('');
-    // Simulate save
-    setRateLimitSuccess('配置已保存');
-  };
-
-  const handleForceLogout = (sessionId: string) => {
-    setSessions((prev) => prev.filter((s) => s.id !== sessionId));
-  };
-
-  const handleLogoutAll = () => {
-    setSessions((prev) => prev.filter((s) => s.current));
-    setLogoutAllOpen(false);
   };
 
   return (
     <div className="space-y-6">
       {/* Page Header */}
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">安全设置</h1>
-        <p className="text-muted-foreground mt-1">账号安全与系统配置</p>
+        <h1 className="text-2xl font-bold tracking-tight">设置</h1>
+        <p className="text-muted-foreground mt-1">系统配置与安全</p>
       </div>
 
-      {/* Section 1: 修改密码 */}
-      <Card>
+      {/* Section 1: API 请求配置 */}
+      <Card className="rounded-xl">
+        <CardHeader>
+          <CardTitle className="text-lg">API 请求配置</CardTitle>
+          <CardDescription>配置全局 API 请求参数与凭证存储方式</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="w-full max-w-md space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">全局请求速率限制</label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min="1"
+                  value={rateLimit}
+                  onChange={(e) => setRateLimit(e.target.value)}
+                  className="w-full sm:w-32"
+                />
+                <span className="text-sm text-muted-foreground whitespace-nowrap">次/分钟</span>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">请求超时时间</label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min="1000"
+                  value={requestTimeout}
+                  onChange={(e) => setRequestTimeout(e.target.value)}
+                  className="w-full sm:w-32"
+                />
+                <span className="text-sm text-muted-foreground whitespace-nowrap">ms</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={autoRetry}
+                  onChange={(e) => setAutoRetry(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-muted rounded-full peer peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full" />
+              </label>
+              <span className="text-sm font-medium">启用自动重试</span>
+            </div>
+            {autoRetry && (
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium">最大重试次数</label>
+                <Input
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={maxRetries}
+                  onChange={(e) => setMaxRetries(e.target.value)}
+                  className="w-full sm:w-32"
+                />
+              </div>
+            )}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">凭证存储方式</label>
+              <Select
+                options={storageOptions}
+                value={credentialStorage}
+                onChange={(e) => setCredentialStorage(e.target.value)}
+              />
+            </div>
+            <Button onClick={handleSaveConfig}>保存配置</Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Section 2: 修改密码 */}
+      <Card className="rounded-xl">
         <CardHeader>
           <CardTitle className="text-lg">修改密码</CardTitle>
           <CardDescription>更新您的账号密码</CardDescription>
@@ -226,185 +260,42 @@ export function SecuritySettingsPage() {
                 <p className="text-xs text-destructive">两次输入的密码不一致</p>
               )}
             </div>
-            {pwdError && <p className="text-sm text-destructive">{pwdError}</p>}
-            {pwdSuccess && <p className="text-sm text-green-600 dark:text-green-400">{pwdSuccess}</p>}
             <Button onClick={handleUpdatePassword}>更新密码</Button>
           </div>
         </CardContent>
       </Card>
 
-      {/* Section 2: 会话管理 */}
-      <Card>
+      {/* Section 3: 系统信息 */}
+      <Card className="rounded-xl">
         <CardHeader>
-          <CardTitle className="text-lg">会话管理</CardTitle>
-          <CardDescription>管理您的活跃登录会话</CardDescription>
+          <CardTitle className="text-lg">系统信息</CardTitle>
+          <CardDescription>系统配置与状态只读信息</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
-            {sessions.map((session) => (
-              <div
-                key={session.id}
-                className="flex flex-col sm:flex-row sm:items-center justify-between rounded-lg border p-4 gap-3"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="text-muted-foreground">
-                    <DeviceIcon device={session.device} />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-sm">
-                        {session.browser} · {session.device}
-                      </span>
-                      {session.current && (
-                        <Badge variant="success" className="text-[10px] px-1.5 py-0">
-                          当前会话
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      IP: {session.ip} · 最后活跃: {formatTime(session.lastActive)}
-                    </p>
-                  </div>
-                </div>
-                {!session.current && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleForceLogout(session.id)}
-                  >
-                    强制登出
-                  </Button>
-                )}
-              </div>
-            ))}
-          </div>
-          {sessions.some((s) => !s.current) && (
-            <div className="mt-4">
-              <Button variant="destructive" size="sm" onClick={() => setLogoutAllOpen(true)}>
-                登出所有设备
-              </Button>
-            </div>
-          )}
-          <ConfirmDialog
-            open={logoutAllOpen}
-            onOpenChange={setLogoutAllOpen}
-            title="登出所有设备"
-            description="确定要登出所有其他设备上的会话吗？当前会话将保持登录状态。"
-            confirmText="确认登出"
-            onConfirm={handleLogoutAll}
-          />
-        </CardContent>
-      </Card>
-
-      {/* Section 3: API 速率限制 */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">API 速率限制</CardTitle>
-          <CardDescription>
-            配置 API 请求频率限制，防止因请求过快被服务商限制
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="w-full max-w-md space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">全局请求速率限制</label>
-              <div className="flex items-center gap-2">
-                <Input
-                  type="number"
-                  min="1"
-                  value={globalRateLimit}
-                  onChange={(e) => setGlobalRateLimit(e.target.value)}
-                  className="w-full sm:w-32"
-                />
-                <span className="text-sm text-muted-foreground">次/分钟</span>
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">DNSHE 请求间隔</label>
-              <div className="flex items-center gap-2">
-                <Input
-                  type="number"
-                  min="0"
-                  value={dnsheInterval}
-                  onChange={(e) => setDnsheInterval(e.target.value)}
-                  className="w-full sm:w-32"
-                />
-                <span className="text-sm text-muted-foreground">毫秒</span>
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">DNSNeko 请求间隔</label>
-              <div className="flex items-center gap-2">
-                <Input
-                  type="number"
-                  min="0"
-                  value={dnsnekoInterval}
-                  onChange={(e) => setDnsnekoInterval(e.target.value)}
-                  className="w-full sm:w-32"
-                />
-                <span className="text-sm text-muted-foreground">毫秒</span>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={autoRetry}
-                  onChange={(e) => setAutoRetry(e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-9 h-5 bg-muted rounded-full peer peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full" />
-              </label>
-              <span className="text-sm font-medium">启用自动重试</span>
-            </div>
-            {autoRetry && (
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium">最大重试次数</label>
-                <Input
-                  type="number"
-                  min="1"
-                  max="10"
-                  value={maxRetries}
-                  onChange={(e) => setMaxRetries(e.target.value)}
-                  className="w-full sm:w-32"
-                />
-              </div>
-            )}
-            {rateLimitSuccess && (
-              <p className="text-sm text-green-600 dark:text-green-400">{rateLimitSuccess}</p>
-            )}
-            <Button onClick={handleSaveRateLimit}>保存配置</Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Section 4: 安全信息 */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">安全信息</CardTitle>
-          <CardDescription>账号安全相关只读信息</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between py-2 border-b last:border-0">
+          <div className="space-y-0">
+            <div className="flex items-center justify-between py-3 border-b">
               <span className="text-sm text-muted-foreground">JWT Token 过期时间</span>
-              <span className="text-sm font-medium">24 小时</span>
+              <span className="text-sm font-medium">24小时</span>
             </div>
-            <div className="flex items-center justify-between py-2 border-b last:border-0">
+            <div className="flex items-center justify-between py-3 border-b">
               <span className="text-sm text-muted-foreground">凭证存储方式</span>
-              <span className="text-sm font-medium">本地加密 / Cloudflare Secrets</span>
+              <span className="text-sm font-medium">
+                {credentialStorage === 'local' ? '本地存储' : 'Cloudflare Secrets'}
+              </span>
             </div>
-            <div className="flex items-center justify-between py-2 border-b last:border-0">
+            <div className="flex items-center justify-between py-3 border-b">
+              <span className="text-sm text-muted-foreground">账号总数</span>
+              <span className="text-sm font-medium">{accountCount}</span>
+            </div>
+            <div className="flex items-center justify-between py-3 border-b">
               <span className="text-sm text-muted-foreground">最后密码修改时间</span>
               <span className="text-sm font-medium">
                 {user?.createdAt ? formatTime(user.createdAt) : '—'}
               </span>
             </div>
-            <div className="flex items-center justify-between py-2">
-              <span className="text-sm text-muted-foreground">账号创建时间</span>
-              <span className="text-sm font-medium">
-                {user?.createdAt ? formatTime(user.createdAt) : '—'}
-              </span>
+            <div className="flex items-center justify-between py-3">
+              <span className="text-sm text-muted-foreground">系统版本</span>
+              <span className="text-sm font-medium">1.0.0</span>
             </div>
           </div>
         </CardContent>

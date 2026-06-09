@@ -1,1 +1,0 @@
-export { DomainListPage } from './DomainListPage';

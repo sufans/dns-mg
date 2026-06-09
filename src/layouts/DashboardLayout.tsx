@@ -3,9 +3,7 @@ import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   Globe,
-  FileText,
   Key,
-  RefreshCw,
   ScrollText,
   Shield,
   Sun,
@@ -21,14 +19,11 @@ import { useAuthStore } from '../stores/auth';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 
-const navItems = [
+const navItems: { label: string; icon: typeof LayoutDashboard; path: string; disabled?: boolean }[] = [
   { label: '仪表盘', icon: LayoutDashboard, path: '/dashboard' },
-  { label: '域名管理', icon: Globe, path: '/domains' },
-  { label: 'DNS 记录', icon: FileText, path: '/domains/:domainId/records', disabled: true },
-  { label: 'API 账号', icon: Key, path: '/api-accounts' },
-  { label: '同步任务', icon: RefreshCw, path: '/sync' },
+  { label: 'API 账号', icon: Key, path: '/accounts' },
   { label: '操作日志', icon: ScrollText, path: '/logs' },
-  { label: '安全设置', icon: Shield, path: '/security' },
+  { label: '安全设置', icon: Shield, path: '/settings' },
 ];
 
 function useTheme() {
@@ -47,9 +42,7 @@ function useTheme() {
 
 function getPageTitle(pathname: string): string {
   const item = navItems.find((n) => n.path === pathname);
-  if (item) return item.label;
-  if (pathname.startsWith('/domains/') && pathname.includes('/records')) return 'DNS 记录';
-  return '仪表盘';
+  return item?.label ?? '仪表盘';
 }
 
 export function DashboardLayout() {

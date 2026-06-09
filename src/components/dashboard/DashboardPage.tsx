@@ -1,49 +1,43 @@
 import { useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  Globe,
-  AlertTriangle,
-  FileText,
-  RefreshCw,
- Plus,
-  Minus,
-  Edit3,
-  Trash2,
-  CheckCircle2,
+  KeyRound,
+  CheckCircle,
   XCircle,
+  Activity,
+  TrendingUp,
+  Clock,
+  Plus,
+  Trash2,
+  Edit3,
+  RefreshCw,
+  Minus,
+  FileText,
+  CheckCircle2,
 } from 'lucide-react';
 import {
-  BarChart,
-  Bar,
+  PieChart,
+  Pie,
+  Cell,
+  AreaChart,
+  Area,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip as RechartsTooltip,
   ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Legend,
 } from 'recharts';
-import { cn } from '../../lib/utils';
-import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '../../components/ui/card';
+import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/card';
 import { Badge } from '../../components/ui/badge';
 import { Progress } from '../../components/ui/progress';
+import { useCredentialsStore } from '../../stores/credentials';
 import {
-  mockDomains,
-  mockRecords,
+  mockDailyRequests,
   mockOperationLogs,
-  mockSyncTasks,
   mockDnsheQuota,
-  mockDomainTrend,
-  mockRecordTypeDistribution,
 } from '../../lib/mock-data';
 
-function getDaysUntilExpiry(expireTime: string | null): number | null {
-  if (!expireTime) return null;
-  const diff = new Date(expireTime).getTime() - Date.now();
-  return Math.ceil(diff / (1000 * 60 * 60 * 24));
-}
+// ── Helpers ──────────────────────────────────────────────────────────
 
 function formatTimeAgo(timestamp: string): string {
   const diff = Date.now() - new Date(timestamp).getTime();
@@ -56,218 +50,296 @@ function formatTimeAgo(timestamp: string): string {
 }
 
 function getActionIcon(action: string) {
-  if (action.includes('添加')) return <Plus className="h-4 w-4 text-success" />;
-  if (action.includes('删除')) return <Trash2 className="h-4 w-4 text-destructive" />;
-  if (action.includes('修改')) return <Edit3 className="h-4 w-4 text-primary" />;
-  if (action.includes('同步')) return <RefreshCw className="h-4 w-4 text-accent" />;
-  if (action.includes('暂停')) return <Minus className="h-4 w-4 text-warning" />;
-  if (action.includes('验证')) return <CheckCircle2 className="h-4 w-4 text-primary" />;
+  if (action.includes('add')) return <Plus className="h-4 w-4 text-success" />;
+  if (action.includes('delete')) return <Trash2 className="h-4 w-4 text-destructive" />;
+  if (action.includes('edit')) return <Edit3 className="h-4 w-4 text-primary" />;
+  if (action.includes('test')) return <RefreshCw className="h-4 w-4 text-cyan-500" />;
+  if (action.includes('set_default')) return <Minus className="h-4 w-4 text-warning" />;
   return <FileText className="h-4 w-4 text-muted-foreground" />;
 }
 
+function getActionLabel(action: string): string {
+  const labels: Record<string, string> = {
+    add_account: '添加账号',
+    edit_account: '编辑账号',
+    delete_account: '删除账号',
+    test_connection: '测试连接',
+    set_default: '设为默认',
+    login: '登录',
+    logout: '登出',
+    change_password: '修改密码',
+    update_settings: '更新设置',
+  };
+  return labels[action] ?? action;
+}
+
+// ── Pie chart colours ────────────────────────────────────────────────
+
+const PIE_COLORS: Record<string, string> = {
+  valid: '#22c55e',
+  invalid: '#ef4444',
+  unverified: '#9ca3af',
+};
+
+const PIE_LABELS: Record<string, string> = {
+  valid: '有效',
+  invalid: '无效',
+  unverified: '未验证',
+};
+
+// ── Component ────────────────────────────────────────────────────────
+
 export function DashboardPage() {
+  const accounts = useCredentialsStore((s) => s.accounts);
+
+  // ── Derived stats ──────────────────────────────────────────────────
+
   const stats = useMemo(() => {
-    const totalDomains = mockDomains.length;
-    const newThisMonth = mockDomains.filter((d) => {
-      if (!d.createdAt) return false;
-      const created = new Date(d.createdAt);
-      const now = new Date();
-      return created.getMonth() === now.getMonth() && created.getFullYear() === now.getFullYear();
-    }).length;
+    const totalAccounts = accounts.length;
+    const validAccounts = accounts.filter((a) => a.status === 'valid').length;
+    const invalidAccounts = accounts.filter((a) => a.status === 'invalid').length;
+    const unverifiedAccounts = accounts.filter((a) => a.status === 'unverified').length;
+    const todayRequests = mockDailyRequests.reduce((sum, d) => sum + d.requests, 0);
 
-    const expiringDomains = mockDomains.filter((d) => {
-      const days = getDaysUntilExpiry(d.expireTime);
-      return days !== null && days >= 0 && days <= 30;
-    });
+    return { totalAccounts, validAccounts, invalidAccounts, unverifiedAccounts, todayRequests };
+  }, [accounts]);
 
-    const totalRecords = mockRecords.length;
-    const providers = new Set(mockDomains.map((d) => d.provider));
+  // ── Pie chart data ─────────────────────────────────────────────────
 
-    const lastSync = mockSyncTasks.find((t) => t.status === 'completed');
-    const lastSyncTimeAgo = lastSync?.completedAt ? formatTimeAgo(lastSync.completedAt) : '无';
-    const hasFailedSync = mockSyncTasks.some((t) => t.status === 'failed');
+  const pieData = useMemo(
+    () => [
+      { name: 'valid', value: stats.validAccounts },
+      { name: 'invalid', value: stats.invalidAccounts },
+      { name: 'unverified', value: stats.unverifiedAccounts },
+    ].filter((d) => d.value > 0),
+    [stats],
+  );
 
-    return {
-      totalDomains,
-      newThisMonth,
-      expiringCount: expiringDomains.length,
-      totalRecords,
-      providerCount: providers.size,
-      lastSyncTimeAgo,
-      syncHealthy: !hasFailedSync,
-    };
-  }, [mockDomains, mockRecords, mockSyncTasks]);
+  // ── Recent logs ────────────────────────────────────────────────────
 
-  const expiringDomains = useMemo(() => {
-    return mockDomains
-      .map((d) => ({ ...d, daysLeft: getDaysUntilExpiry(d.expireTime) }))
-      .filter((d) => d.daysLeft !== null && d.daysLeft >= 0 && d.daysLeft <= 30)
-      .sort((a, b) => (a.daysLeft ?? 0) - (b.daysLeft ?? 0));
-  }, [mockDomains]);
+  const recentLogs = useMemo(() => mockOperationLogs.slice(0, 5), []);
 
-  const recentLogs = useMemo(() => mockOperationLogs.slice(0, 5), [mockOperationLogs]);
+  // ── Quota ──────────────────────────────────────────────────────────
 
   const quotaPercent = useMemo(
     () => Math.round((mockDnsheQuota.used / mockDnsheQuota.total) * 100),
-    [mockDnsheQuota]
+    [],
   );
+
+  // ── Render ─────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-6">
-      {/* Statistics Cards: 1 col mobile, 2 col tablet, 4 col desktop */}
+      {/* ─── 1. Statistics Cards Row ──────────────────────────────── */}
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
-        {/* Total Domains */}
+        {/* 已配置账号 */}
         <Card>
           <CardContent className="p-6">
             <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
-                <Globe className="h-6 w-6 text-primary" />
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-500/10">
+                <KeyRound className="h-6 w-6 text-blue-500" />
               </div>
               <div>
-                <p className="text-sm font-medium text-muted-foreground">域名总数</p>
-                <p className="text-3xl font-bold">{stats.totalDomains}</p>
-                <p className="text-xs text-success font-medium">+{stats.newThisMonth} 本月新增</p>
+                <p className="text-sm font-medium text-muted-foreground">已配置账号</p>
+                <p className="text-3xl font-bold">{stats.totalAccounts}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Expiring Soon */}
+        {/* 有效账号 */}
         <Card>
           <CardContent className="p-6">
             <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-warning/10">
-                <AlertTriangle className="h-6 w-6 text-warning" />
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-500/10">
+                <CheckCircle className="h-6 w-6 text-green-500" />
               </div>
               <div>
-                <p className="text-sm font-medium text-muted-foreground">即将到期</p>
-                <p className="text-3xl font-bold text-warning">{stats.expiringCount}</p>
-                <p className="text-xs text-muted-foreground">30天内到期</p>
+                <p className="text-sm font-medium text-muted-foreground">有效账号</p>
+                <p className="text-3xl font-bold text-green-600 dark:text-green-400">{stats.validAccounts}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* DNS Records */}
+        {/* 无效账号 */}
         <Card>
           <CardContent className="p-6">
             <div className="flex items-center gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent/10">
-                <FileText className="h-6 w-6 text-accent" />
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-500/10">
+                <XCircle className="h-6 w-6 text-red-500" />
               </div>
               <div>
-                <p className="text-sm font-medium text-muted-foreground">DNS 记录</p>
-                <p className="text-3xl font-bold">{stats.totalRecords}</p>
-                <p className="text-xs text-muted-foreground">跨 {stats.providerCount} 个平台</p>
+                <p className="text-sm font-medium text-muted-foreground">无效账号</p>
+                <p className="text-3xl font-bold text-red-600 dark:text-red-400">{stats.invalidAccounts}</p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Sync Status */}
+        {/* 今日请求 */}
         <Card>
           <CardContent className="p-6">
             <div className="flex items-center gap-4">
-              <div className={cn('flex h-12 w-12 items-center justify-center rounded-full', stats.syncHealthy ? 'bg-success/10' : 'bg-destructive/10')}>
-                <RefreshCw className={cn('h-6 w-6', stats.syncHealthy ? 'text-success' : 'text-destructive')} />
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-cyan-500/10">
+                <Activity className="h-6 w-6 text-cyan-500" />
               </div>
               <div>
-                <p className="text-sm font-medium text-muted-foreground">同步状态</p>
-                <div className="flex items-center gap-2 mt-1">
-                  <Badge variant={stats.syncHealthy ? 'success' : 'destructive'}>
-                    {stats.syncHealthy ? '正常' : '异常'}
-                  </Badge>
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">上次同步: {stats.lastSyncTimeAgo}</p>
+                <p className="text-sm font-medium text-muted-foreground">今日请求</p>
+                <p className="text-3xl font-bold">{stats.todayRequests.toLocaleString()}</p>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Platform Quota Section: 1 col mobile, 2 col tablet+ */}
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">DNSHE 配额</CardTitle>
-            <CardDescription>已使用 {mockDnsheQuota.used} / {mockDnsheQuota.total} 个域名</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Progress value={quotaPercent} variant={quotaPercent > 80 ? 'warning' : 'primary'} />
-            <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-              <span>基础配额: {mockDnsheQuota.base}</span>
-              <span>邀请奖励: +{mockDnsheQuota.inviteBonus}</span>
-              <span>可用: {mockDnsheQuota.available}</span>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">DNSNeko</CardTitle>
-            <CardDescription>DNSNeko 平台状态</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-success/10">
-                <CheckCircle2 className="h-5 w-5 text-success" />
-              </div>
-              <div>
-                <p className="text-sm font-medium">服务正常</p>
-                <p className="text-xs text-muted-foreground">无配额限制</p>
-              </div>
-            </div>
-            <div className="mt-3 text-xs text-muted-foreground">
-              已接入 {mockDomains.filter((d) => d.provider === 'dnsneko').length} 个域名
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Expiry Warning + Recent Activity: 1 col mobile, 2 col desktop */}
+      {/* ─── 2. Account Status Distribution + 3. Request Frequency ── */}
       <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
-        {/* Expiry Warning */}
-        {expiringDomains.length > 0 && (
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base">到期预警</CardTitle>
-                <Link to="/domains" className="text-sm text-primary hover:underline">查看全部</Link>
+        {/* Account Status Distribution (Pie) */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">账号状态分布</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-6">
+              <div className="h-[200px] w-[200px] shrink-0">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={pieData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={50}
+                      outerRadius={80}
+                      paddingAngle={4}
+                      dataKey="value"
+                      stroke="none"
+                    >
+                      {pieData.map((entry) => (
+                        <Cell key={entry.name} fill={PIE_COLORS[entry.name]} />
+                      ))}
+                    </Pie>
+                    <RechartsTooltip
+                      contentStyle={{
+                        backgroundColor: 'hsl(var(--card))',
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                      }}
+                      formatter={(value, name) => [value, PIE_LABELS[String(name)] ?? String(name)]}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
               </div>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3 overflow-x-auto -mx-1 px-1">
-                {expiringDomains.map((domain) => (
-                  <div key={domain.id} className="flex items-center justify-between rounded-lg border p-3 min-w-[280px]">
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm font-medium">{domain.name}</span>
-                      <Badge variant={domain.provider === 'dnshe' ? 'default' : 'secondary'}>
-                        {domain.provider === 'dnshe' ? 'DNSHE' : 'DNSNeko'}
-                      </Badge>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs text-muted-foreground">
-                        {domain.expireTime ? new Date(domain.expireTime).toLocaleDateString('zh-CN') : '-'}
-                      </span>
-                      <Badge
-                        variant={(domain.daysLeft ?? 0) < 7 ? 'destructive' : 'warning'}
-                      >
-                        剩余 {domain.daysLeft} 天
-                      </Badge>
-                    </div>
+              <div className="flex flex-col gap-3">
+                {pieData.map((entry) => (
+                  <div key={entry.name} className="flex items-center gap-2">
+                    <span
+                      className="inline-block h-3 w-3 rounded-full"
+                      style={{ backgroundColor: PIE_COLORS[entry.name] }}
+                    />
+                    <span className="text-sm text-muted-foreground">{PIE_LABELS[entry.name]}</span>
+                    <span className="text-sm font-semibold">{entry.value}</span>
                   </div>
                 ))}
               </div>
-            </CardContent>
-          </Card>
-        )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Request Frequency Trend (Area) */}
+        <Card>
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">请求频率趋势</CardTitle>
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="h-[220px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={mockDailyRequests} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                  <defs>
+                    <linearGradient id="requestGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="hsl(217, 91%, 60%)" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="hsl(217, 91%, 60%)" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                  <XAxis dataKey="day" tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
+                  <YAxis allowDecimals={false} tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
+                  <RechartsTooltip
+                    contentStyle={{
+                      backgroundColor: 'hsl(var(--card))',
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px',
+                      fontSize: '12px',
+                    }}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="requests"
+                    name="请求数"
+                    stroke="hsl(217, 91%, 60%)"
+                    strokeWidth={2}
+                    fill="url(#requestGradient)"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* ─── 4. Platform Quota + 5. Recent Activity ──────────────── */}
+      <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
+        {/* Platform Quota */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">平台配额</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            {/* DNSHE */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Badge variant="default" className="text-[10px]">DNSHE</Badge>
+                  <span className="text-sm font-medium">域名配额</span>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  {mockDnsheQuota.used} / {mockDnsheQuota.total}
+                </span>
+              </div>
+              <Progress value={quotaPercent} variant={quotaPercent > 80 ? 'warning' : 'primary'} />
+              <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+                <span>基础: {mockDnsheQuota.base}</span>
+                <span>邀请奖励: +{mockDnsheQuota.inviteBonus}</span>
+                <span>可用: {mockDnsheQuota.available}</span>
+              </div>
+            </div>
+
+            {/* DNSNeko */}
+            <div>
+              <div className="flex items-center gap-3">
+                <Badge variant="secondary" className="text-[10px]">DNSNeko</Badge>
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-success" />
+                  <span className="text-sm font-medium">服务正常</span>
+                </div>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">无配额 API，不限域名数量</p>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Recent Activity */}
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-base">最近操作</CardTitle>
-              <Link to="/logs" className="text-sm text-primary hover:underline">查看全部</Link>
+              <CardTitle className="text-base">近期操作</CardTitle>
+              <Link to="/logs" className="text-sm text-primary hover:underline">
+                查看全部
+              </Link>
             </div>
           </CardHeader>
           <CardContent>
@@ -277,7 +349,7 @@ export function DashboardPage() {
                   <div className="mt-0.5">{getActionIcon(log.action)}</div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium">{log.action}</span>
+                      <span className="text-sm font-medium">{getActionLabel(log.action)}</span>
                       {log.result === 'failure' ? (
                         <XCircle className="h-3.5 w-3.5 text-destructive" />
                       ) : (
@@ -286,84 +358,12 @@ export function DashboardPage() {
                     </div>
                     <p className="text-xs text-muted-foreground truncate">{log.target}</p>
                   </div>
-                  <span className="text-xs text-muted-foreground whitespace-nowrap">
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap">
+                    <Clock className="h-3 w-3" />
                     {formatTimeAgo(log.timestamp)}
-                  </span>
+                  </div>
                 </div>
               ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Charts Section: 1 col mobile, 2 col desktop */}
-      <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
-        {/* Domain Trend */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">域名趋势</CardTitle>
-            <CardDescription>近6个月新增域名数</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[260px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={mockDomainTrend} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                  <XAxis dataKey="month" className="text-xs" tick={{ fill: 'hsl(var(--muted-foreground))' }} />
-                  <YAxis allowDecimals={false} className="text-xs" tick={{ fill: 'hsl(var(--muted-foreground))' }} />
-                  <RechartsTooltip
-                    contentStyle={{
-                      backgroundColor: 'hsl(var(--card))',
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '8px',
-                      fontSize: '12px',
-                    }}
-                  />
-                  <Bar dataKey="count" name="新增域名" fill="hsl(217, 91%, 60%)" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Record Type Distribution */}
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">记录类型分布</CardTitle>
-            <CardDescription>DNS 记录类型占比</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[260px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={mockRecordTypeDistribution}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={55}
-                    outerRadius={85}
-                    paddingAngle={3}
-                    dataKey="value"
-                    nameKey="name"
-                    label={({ name, percent }) => `${name} ${((percent ?? 0) * 100).toFixed(0)}%`}
-                  >
-                    {mockRecordTypeDistribution.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={entry.fill} />
-                    ))}
-                  </Pie>
-                  <RechartsTooltip
-                    contentStyle={{
-                      backgroundColor: 'hsl(var(--card))',
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '8px',
-                      fontSize: '12px',
-                    }}
-                  />
-                  <Legend
-                    wrapperStyle={{ fontSize: '12px' }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
             </div>
           </CardContent>
         </Card>

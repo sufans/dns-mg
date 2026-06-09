@@ -1,19 +1,18 @@
-- [ ] types/index.ts 新增 AccountEntry、UsageStats、DailyRequest、RecentCall 接口
-- [ ] Credentials Store 支持同平台多账号，含 addAccount/updateAccount/removeAccount/setDefaultAccount
-- [ ] 旧 localStorage 数据自动迁移为新多账号格式
-- [ ] 移除 landing/domains/dns-records/sync 页面及路由
-- [ ] App.tsx 根路径重定向到 /dashboard
-- [ ] DashboardLayout 导航精简为：概览、账号管理、操作日志、设置
-- [ ] 概览页展示账号统计、状态分布图、请求频率图、配额概览、近期日志
-- [ ] 账号管理页卡片网格展示，含搜索筛选
-- [ ] 添加账号流程：选平台 → 填凭证 → 命名标签 → 设默认 → 保存
-- [ ] 编辑账号表单预填凭证，支持修改标签和默认状态
-- [ ] API Key 显示/隐藏切换（眼睛图标）
-- [ ] 默认账号设置/取消功能
-- [ ] 账号详情展开面板含配额、使用统计、近期调用
-- [ ] 空状态引导（无账号时）
-- [ ] 所有 alert 调用替换为 Sonner toast
-- [ ] 操作日志关联账号维度，支持按账号筛选
-- [ ] 设置页包含 API 速率限制、超时、重试策略、凭证存储方式
-- [ ] 多账号测试全部通过（添加同平台多账号、设置默认、切换、迁移）
-- [ ] README 为专业技术文档风格，含架构说明、多账号配置、环境变量、FAQ
+- [x] types/index.ts 新增 AccountEntry、UsageStats、DailyRequest、RecentCall、ProviderInfo、CredentialField、GlobalConfig 接口
+- [x] Credentials Store 支持同平台多账号，含 addAccount/updateAccount/removeAccount/setDefaultAccount
+- [x] 移除 landing/domains/dns-records/sync 页面及路由
+- [x] App.tsx 根路径重定向到 /dashboard
+- [x] DashboardLayout 导航精简为：概览、账号管理、操作日志、设置
+- [x] 概览页展示账号统计、状态分布图、请求频率图、配额概览、近期日志
+- [x] 账号管理页卡片网格展示，含搜索筛选
+- [x] 添加账号流程：选平台 → 填凭证 → 命名标签 → 设默认 → 保存
+- [x] 编辑账号表单预填凭证，支持修改标签和默认状态
+- [x] API Key 显示/隐藏切换（眼睛图标）
+- [x] 默认账号设置/取消功能
+- [x] 账号详情展开面板含配额、使用统计、近期调用
+- [x] 空状态引导（无账号时）
+- [x] 所有 alert 调用替换为 Sonner toast
+- [x] 操作日志关联账号维度，支持按账号筛选
+- [x] 设置页包含 API 速率限制、超时、重试策略、凭证存储方式
+- [x] 60 个测试全部通过（credentials 27 + auth 11 + providers 18 + utils 4）
+- [x] README 为专业技术文档风格，含架构图、多账号配置、环境变量、FAQ
