@@ -4,6 +4,7 @@ export interface Env {
   ADMIN_PASSWORD_HASH: string;
   JWT_SECRET: string;
   ENCRYPTION_KEY: string;
+  SEND_EMAIL_DOMAIN: string;
 }
 
 export type PagesFunction<

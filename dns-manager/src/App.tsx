@@ -4,17 +4,11 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { Toaster } from "@/components/ui/sonner"
 import { MainLayout } from "@/components/MainLayout"
 import { LoginPage } from "@/pages/LoginPage"
-
-function PlaceholderPage({ name }: { name: string }) {
-  return (
-    <div className="flex items-center justify-center min-h-[60vh]">
-      <div className="text-center">
-        <h1 className="text-2xl font-semibold text-foreground">{name}</h1>
-        <p className="mt-2 text-sm text-muted-foreground">页面开发中...</p>
-      </div>
-    </div>
-  )
-}
+import { AccountsPage } from "@/pages/AccountsPage"
+import { SettingsPage } from "@/pages/SettingsPage"
+import { DashboardPage } from "@/pages/DashboardPage"
+import { DomainsPage } from "@/pages/DomainsPage"
+import { DomainDetailPage } from "@/pages/DomainDetailPage"
 
 function App() {
   return (
@@ -25,11 +19,11 @@ function App() {
             <Route path="/login" element={<LoginPage />} />
             <Route element={<MainLayout />}>
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<PlaceholderPage name="仪表盘" />} />
-              <Route path="/domains" element={<PlaceholderPage name="域名管理" />} />
-              <Route path="/domains/:accountId/:domainId" element={<PlaceholderPage name="域名详情" />} />
-              <Route path="/accounts" element={<PlaceholderPage name="API 账号" />} />
-              <Route path="/settings" element={<PlaceholderPage name="系统设置" />} />
+              <Route path="/dashboard" element={<DashboardPage />} />
+              <Route path="/domains" element={<DomainsPage />} />
+              <Route path="/domains/:accountId/:domainId" element={<DomainDetailPage />} />
+              <Route path="/accounts" element={<AccountsPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
             </Route>
           </Routes>
         </BrowserRouter>

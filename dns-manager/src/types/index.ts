@@ -29,14 +29,31 @@ export interface DnsRecord {
   updatedAt: string;
 }
 
-// Domain type (aligned with DomainSchema)
+// Domain type (aligned with UnifiedDomain from API)
 export interface Domain {
   id: string;
-  name: string;
+  accountId: string;
   platform: string;
-  platformId: string;
-  createdAt: string;
-  updatedAt: string;
+  domain: string;
+  rootDomain?: string;
+  status: 'active' | 'suspended' | 'expired' | number;
+  statusText?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  expireTime?: string;
+  expired?: boolean;
+  recordCount?: number | string;
+  accountName?: string;
+  // DNSHE-specific
+  subdomainId?: number;
+  subdomain?: string;
+  // DNSNEKO-specific
+  domainId?: string;
+  userRemark?: string;
+  notice?: string;
+  allowOperation?: number;
+  registerDuration?: number;
+  renewDays?: number;
 }
 
 // DNS Platform adapter interface
