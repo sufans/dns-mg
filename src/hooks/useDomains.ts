@@ -38,7 +38,7 @@ export function useDomains(filters?: DomainFilters) {
 export function useDomainDetail(accountId: string, domainId: string) {
   return useQuery({
     queryKey: ['domains', accountId, domainId],
-    queryFn: () => api.get<Domain>(`/accounts/${accountId}/domains/${domainId}`),
+    queryFn: () => api.get<Domain>(`/domains/${accountId}/${domainId}`),
     enabled: !!accountId && !!domainId,
   });
 }

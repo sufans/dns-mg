@@ -248,10 +248,12 @@ export function DomainDetailPage() {
     async (record: DnsRecord) => {
       if (!accountId || !domainId) return;
       try {
+        const currentEnabled = record.status === 1 || record.status === 'active';
         await toggleStatus.mutateAsync({
           accountId,
           domainId,
           recordId: record.id,
+          enabled: !currentEnabled,
         });
         toast.success('状态切换成功');
       } catch {

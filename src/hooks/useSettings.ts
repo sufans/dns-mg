@@ -52,7 +52,7 @@ export function useOperationLogs(filters?: LogFilters) {
       if (filters?.page) params.set('page', String(filters.page));
       if (filters?.pageSize) params.set('pageSize', String(filters.pageSize));
       const query = params.toString();
-      return api.get<LogListResponse>(`/settings/logs${query ? `?${query}` : ''}`);
+      return api.get<LogListResponse>(`/logs${query ? `?${query}` : ''}`);
     },
   });
 }
@@ -61,7 +61,7 @@ export function useCleanupLogs() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (retentionDays: number) => api.post<{ deleted: number }>('/settings/logs/cleanup', { retentionDays }),
+    mutationFn: (retentionDays: number) => api.post<{ deleted: number }>('/logs/cleanup', { retentionDays }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['operationLogs'] });
     },
@@ -72,7 +72,7 @@ export function useBackup() {
   return useMutation({
     mutationFn: async () => {
       await api.download(
-        '/settings/backup',
+        '/backup',
         `dns-manager-backup-${new Date().toISOString().slice(0, 10)}.json`
       );
     },
@@ -86,7 +86,7 @@ export function useRestore() {
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append('file', file);
-      return api.upload<{ restored: number }>('/settings/restore', formData);
+      return api.upload<{ restored: number }>('/backup', formData);
     },
     onSuccess: () => {
       queryClient.invalidateQueries();

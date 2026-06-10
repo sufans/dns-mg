@@ -36,7 +36,7 @@ export function useDeleteAccount() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (id: string) => api.delete<void>(`/accounts/${id}`),
+    mutationFn: (id: string) => api.delete<void>(`/accounts/${id}/delete`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
     },
