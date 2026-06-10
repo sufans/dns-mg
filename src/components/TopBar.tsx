@@ -1,13 +1,15 @@
-import { useLocation } from "react-router-dom"
-import { Menu, Sun, Moon, Bell } from "lucide-react"
+import { useLocation, useNavigate } from "react-router-dom"
+import { Menu, Sun, Moon, Bell, LogOut, User } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useTheme } from "@/components/ThemeProvider"
+import { useLogout } from "@/hooks/useAuth"
 import { cn } from "@/lib/utils"
 
 const pageTitles: Record<string, string> = {
@@ -30,8 +32,14 @@ interface TopBarProps {
 
 function TopBar({ onMobileMenuToggle }: TopBarProps) {
   const location = useLocation()
+  const navigate = useNavigate()
   const { theme, setTheme } = useTheme()
+  const logoutMutation = useLogout()
   const pageTitle = getPageTitle(location.pathname)
+
+  const handleLogout = () => {
+    logoutMutation.mutate()
+  }
 
   return (
     <header
@@ -104,6 +112,36 @@ function TopBar({ onMobileMenuToggle }: TopBarProps) {
         >
           <Bell className="size-4" />
         </Button>
+
+        {/* User menu */}
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="text-slate-400 hover:text-foreground"
+              >
+                <User className="size-4" />
+              </Button>
+            }
+          />
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => navigate("/settings")}>
+              <User className="size-4 mr-2" />
+              系统设置
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={handleLogout}
+              disabled={logoutMutation.isPending}
+              className="text-red-400 focus:text-red-300"
+            >
+              <LogOut className="size-4 mr-2" />
+              退出登录
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </header>
   )

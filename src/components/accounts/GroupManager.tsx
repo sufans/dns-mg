@@ -300,8 +300,10 @@ export function GroupManager({ open, onOpenChange }: GroupManagerProps) {
           </Button>
         )}
 
-        <DialogFooter showCloseButton>
-          <span className="text-slate-400 text-xs">关闭</span>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            关闭
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

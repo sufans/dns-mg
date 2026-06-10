@@ -44,6 +44,27 @@ const dnsnekoSchema = z.object({
   }),
 })
 
+// Edit mode schemas: credentials are optional (empty = don't change)
+const dnsheEditSchema = z.object({
+  name: z.string().min(1, "账号名称不能为空").max(100),
+  platform: z.literal("dnshe"),
+  groupId: z.string().nullable().optional(),
+  credentials: z.object({
+    apiKey: z.string().optional(),
+    apiSecret: z.string().optional(),
+  }),
+})
+
+const dnsnekoEditSchema = z.object({
+  name: z.string().min(1, "账号名称不能为空").max(100),
+  platform: z.literal("dnsneko"),
+  groupId: z.string().nullable().optional(),
+  credentials: z.object({
+    username: z.string().optional(),
+    apiToken: z.string().optional(),
+  }),
+})
+
 type FormValues = {
   name: string
   platform: Platform
@@ -138,17 +159,32 @@ export function AccountDialog({ open, onOpenChange, account }: AccountDialogProp
   }
 
   const validate = (): boolean => {
-    const schema = platform === "dnshe" ? dnsheSchema : dnsnekoSchema
-    const data = { ...form, platform }
-    const result = schema.safeParse(data)
-    if (!result.success) {
-      const fieldErrors: Record<string, string> = {}
-      for (const issue of result.error.issues) {
-        const path = issue.path.join(".")
-        fieldErrors[path] = issue.message
+    if (isEdit) {
+      const schema = platform === "dnshe" ? dnsheEditSchema : dnsnekoEditSchema
+      const data = { ...form, platform }
+      const result = schema.safeParse(data)
+      if (!result.success) {
+        const fieldErrors: Record<string, string> = {}
+        for (const issue of result.error.issues) {
+          const path = issue.path.join(".")
+          fieldErrors[path] = issue.message
+        }
+        setErrors(fieldErrors)
+        return false
       }
-      setErrors(fieldErrors)
-      return false
+    } else {
+      const schema = platform === "dnshe" ? dnsheSchema : dnsnekoSchema
+      const data = { ...form, platform }
+      const result = schema.safeParse(data)
+      if (!result.success) {
+        const fieldErrors: Record<string, string> = {}
+        for (const issue of result.error.issues) {
+          const path = issue.path.join(".")
+          fieldErrors[path] = issue.message
+        }
+        setErrors(fieldErrors)
+        return false
+      }
     }
     setErrors({})
     return true

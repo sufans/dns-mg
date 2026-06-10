@@ -24,6 +24,7 @@ export interface LogFilters {
   action?: string;
   targetType?: string;
   status?: string;
+  search?: string;
   startDate?: string;
   endDate?: string;
   page?: number;
@@ -45,6 +46,7 @@ export function useOperationLogs(filters?: LogFilters) {
       if (filters?.action) params.set('action', filters.action);
       if (filters?.targetType) params.set('targetType', filters.targetType);
       if (filters?.status) params.set('status', filters.status);
+      if (filters?.search) params.set('search', filters.search);
       if (filters?.startDate) params.set('startDate', filters.startDate);
       if (filters?.endDate) params.set('endDate', filters.endDate);
       if (filters?.page) params.set('page', String(filters.page));

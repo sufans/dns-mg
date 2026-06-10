@@ -6,12 +6,6 @@ interface ApiResponse<T = unknown> {
   data: T | null;
 }
 
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-} as const;
-
 export function createResponse<T = unknown>(
   data: T | null = null,
   status: number = 200,
@@ -22,37 +16,13 @@ export function createResponse<T = unknown>(
     status,
     headers: {
       'Content-Type': 'application/json',
-      ...CORS_HEADERS,
     },
   });
 }
 
+// CORS is handled by api/_middleware.ts; this is now a passthrough
 export function withCors(handler: PagesFunction): PagesFunction {
-  return async (context) => {
-    if (context.request.method === 'OPTIONS') {
-      return new Response(null, {
-        status: 204,
-        headers: {
-          ...CORS_HEADERS,
-          'Access-Control-Max-Age': '86400',
-        },
-      });
-    }
-
-    const response = await handler(context);
-
-    // Ensure CORS headers are present on all responses
-    const newHeaders = new Headers(response.headers);
-    for (const [key, value] of Object.entries(CORS_HEADERS)) {
-      newHeaders.set(key, value);
-    }
-
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: newHeaders,
-    });
-  };
+  return handler;
 }
 
 export function getClientIP(request: Request): string {

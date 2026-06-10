@@ -9,6 +9,7 @@ import { generateExpiryEmail } from './_shared/email-templates';
 import { logOperation } from './_shared/logger';
 import { getAdapter } from './_shared/adapters/index';
 import type { UnifiedDomain, PlatformCredentials } from './_shared/adapters/types';
+import { waitForRateLimit, retryWithBackoff } from './_shared/rateLimiter';
 
 interface AccountRow {
   id: string;
@@ -37,61 +38,6 @@ const RATE_LIMITS: Record<string, { maxRequests: number; windowMs: number }> = {
   dnshe: { maxRequests: 60, windowMs: 60_000 },
   dnsneko: { maxRequests: 30, windowMs: 60_000 },
 };
-
-// Simple rate limit check for scheduled context
-const requestTimestamps = new Map<string, number[]>();
-
-async function waitForRateLimit(key: string, maxRequests: number, windowMs: number): Promise<void> {
-  const now = Date.now();
-  let timestamps = requestTimestamps.get(key) ?? [];
-
-  timestamps = timestamps.filter((t) => t > now - windowMs);
-
-  if (timestamps.length >= maxRequests) {
-    const oldestInWindow = timestamps[0];
-    const waitTime = oldestInWindow + windowMs - now + 100;
-    await new Promise((resolve) => setTimeout(resolve, Math.min(waitTime, 30_000)));
-    timestamps = timestamps.filter((t) => t > Date.now() - windowMs);
-  }
-
-  timestamps.push(Date.now());
-  requestTimestamps.set(key, timestamps);
-}
-
-async function retryWithBackoff<T>(
-  fn: () => Promise<T>,
-  maxRetries: number = 3,
-  baseDelayMs: number = 1000,
-): Promise<T> {
-  let lastError: unknown;
-
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await fn();
-    } catch (error: unknown) {
-      lastError = error;
-
-      if (error instanceof Error) {
-        const msg = error.message;
-        if (/HTTP error: 4\d{2}/.test(msg)) {
-          throw error;
-        }
-        if (/validation|invalid|bad request/i.test(msg)) {
-          throw error;
-        }
-      }
-
-      if (attempt >= maxRetries) {
-        break;
-      }
-
-      const delay = baseDelayMs * Math.pow(2, attempt) + Math.random() * baseDelayMs;
-      await new Promise((resolve) => setTimeout(resolve, delay));
-    }
-  }
-
-  throw lastError;
-}
 
 async function getNotificationSettings(db: D1Database): Promise<NotificationSettings> {
   const { results } = await db

@@ -165,7 +165,7 @@ export function LoginPage() {
         }
       }
     },
-    [username, password, loginMutation]
+    [username, password, loginMutation.mutateAsync]
   )
 
   // Redirect if already authenticated

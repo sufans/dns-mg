@@ -1,14 +1,14 @@
 // PUT /api/records/:accountId/:domainId/:recordId - Update DNS record
 // Protected by requireAuth
 import { z } from 'zod';
-import type { PagesFunction, AuthenticatedEventContext } from '../../../../../_shared/types';
-import { createResponse, withCors, getClientIP } from '../../../../../_shared/utils';
-import { requireAuth } from '../../../../../_shared/auth';
-import { decrypt } from '../../../../../_shared/crypto';
-import { logOperation } from '../../../../../_shared/logger';
-import { getAdapter } from '../../../../../../_shared/adapters/index';
-import type { UpdateRecordInput } from '../../../../../../_shared/adapters/types';
-import { waitForRateLimit, retryWithBackoff } from '../../../../../_shared/rateLimiter';
+import type { PagesFunction, AuthenticatedEventContext } from '../../../../_shared/types';
+import { createResponse, withCors, getClientIP } from '../../../../_shared/utils';
+import { requireAuth } from '../../../../_shared/auth';
+import { decrypt } from '../../../../_shared/crypto';
+import { logOperation } from '../../../../_shared/logger';
+import { getAdapter } from '../../../../_shared/adapters/index';
+import type { UpdateRecordInput } from '../../../../_shared/adapters/types';
+import { waitForRateLimit, retryWithBackoff } from '../../../../_shared/rateLimiter';
 
 interface AccountRow {
   id: string;

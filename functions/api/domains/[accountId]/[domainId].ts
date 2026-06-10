@@ -4,7 +4,7 @@ import type { PagesFunction, AuthenticatedEventContext } from '../../../_shared/
 import { createResponse, withCors } from '../../../_shared/utils';
 import { requireAuth } from '../../../_shared/auth';
 import { decrypt } from '../../../_shared/crypto';
-import { getAdapter } from '../../../../_shared/adapters/index';
+import { getAdapter } from '../../../_shared/adapters/index';
 import { waitForRateLimit, retryWithBackoff } from '../../../_shared/rateLimiter';
 
 interface AccountRow {

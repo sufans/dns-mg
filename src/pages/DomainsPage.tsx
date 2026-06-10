@@ -164,6 +164,7 @@ export function DomainsPage() {
   const { data: domainsData, isLoading } = useDomains({
     platform: platformFilter !== 'all' ? platformFilter : undefined,
     groupId: groupFilter !== 'all' ? groupFilter : undefined,
+    status: statusFilter !== 'all' ? statusFilter : undefined,
     search: search || undefined,
     page,
     pageSize: PAGE_SIZE,
@@ -178,18 +179,14 @@ export function DomainsPage() {
     return map;
   }, [accounts]);
 
-  // All domains from API (for client-side status filter & sort)
-  const allDomains: Domain[] = domainsData?.domains || [];
+  // All domains from API (server-side filtering now handles status)
+  const domainsFromApi = domainsData?.domains;
   const total = domainsData?.total || 0;
 
-  // Apply client-side status filter
+  // Sort only (filtering is server-side)
   const filteredDomains = useMemo(() => {
-    let result = allDomains;
-    if (statusFilter !== 'all') {
-      result = result.filter((d) => getDomainStatus(d) === statusFilter);
-    }
-    // Sort
-    result = [...result].sort((a, b) => {
+    const result = domainsFromApi ?? [];
+    return [...result].sort((a, b) => {
       let cmp = 0;
       switch (sortField) {
         case 'domain':
@@ -204,8 +201,7 @@ export function DomainsPage() {
       }
       return sortOrder === 'asc' ? cmp : -cmp;
     });
-    return result;
-  }, [allDomains, statusFilter, sortField, sortOrder]);
+  }, [domainsFromApi, sortField, sortOrder]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 

@@ -10,6 +10,18 @@ import { DashboardPage } from "@/pages/DashboardPage"
 import { DomainsPage } from "@/pages/DomainsPage"
 import { DomainDetailPage } from "@/pages/DomainDetailPage"
 
+function NotFoundPage() {
+  return (
+    <div className="flex items-center justify-center min-h-[60vh]">
+      <div className="text-center">
+        <h1 className="text-4xl font-bold text-foreground mb-2">404</h1>
+        <p className="text-muted-foreground mb-4">页面不存在</p>
+        <a href="/" className="text-accent-indigo hover:underline">返回首页</a>
+      </div>
+    </div>
+  )
+}
+
 function App() {
   return (
     <ThemeProvider defaultTheme="dark">
@@ -24,6 +36,7 @@ function App() {
               <Route path="/domains/:accountId/:domainId" element={<DomainDetailPage />} />
               <Route path="/accounts" element={<AccountsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
+              <Route path="*" element={<NotFoundPage />} />
             </Route>
           </Routes>
         </BrowserRouter>

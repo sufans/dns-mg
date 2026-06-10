@@ -1,4 +1,4 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { api } from '@/lib/api';
 import { queryClient } from '@/lib/queryClient';
@@ -12,6 +12,15 @@ interface LoginErrorData {
   message: string;
   remainingAttempts?: number;
   unlockAt?: string;
+}
+
+function isTokenValid(token: string): boolean {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    return payload.exp * 1000 > Date.now();
+  } catch {
+    return false;
+  }
 }
 
 export function useLogin() {
@@ -49,16 +58,17 @@ export function useVerifyPassword() {
   });
 }
 
-export function useIsAuthenticated(): boolean {
-  const token = localStorage.getItem('dns-manager-token');
-  if (!token) return false;
-
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    return payload.exp * 1000 > Date.now();
-  } catch {
-    return false;
-  }
+export function useIsAuthenticated() {
+  return useQuery({
+    queryKey: ['auth', 'isAuthenticated'],
+    queryFn: () => {
+      const token = localStorage.getItem('dns-manager-token');
+      if (!token) return false;
+      return isTokenValid(token);
+    },
+    staleTime: 60 * 1000, // Re-check every minute
+    refetchOnWindowFocus: true,
+  });
 }
 
 export type { LoginErrorData };

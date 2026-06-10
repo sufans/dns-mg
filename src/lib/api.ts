@@ -187,7 +187,17 @@ class ApiClient {
     }
 
     if (!response.ok) {
-      throw new Error(`下载失败 (${response.status})`);
+      // Try to parse error message from JSON response
+      let errorMessage = `下载失败 (${response.status})`;
+      try {
+        const errorData = await response.json();
+        if (errorData?.message) {
+          errorMessage = errorData.message;
+        }
+      } catch {
+        // Response is not JSON, use default error message
+      }
+      throw new Error(errorMessage);
     }
 
     const blob = await response.blob();

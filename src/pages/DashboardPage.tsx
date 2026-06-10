@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Globe,
@@ -395,10 +395,15 @@ export function DashboardPage() {
     refetch: refetchAccounts,
   } = useAccounts()
 
-  const domains = domainsData?.domains ?? []
+  const domainsFromApi = domainsData?.domains;
+
+  // Stable empty array reference to avoid unnecessary re-renders
+  const emptyDomains = useRef<Domain[]>([]);
+  const domainsForDisplay = domainsFromApi ?? emptyDomains.current;
 
   const stats = useMemo(() => {
-    const totalDomains = domainsData?.total ?? 0
+    const domains = domainsFromApi ?? [];
+    const totalDomains = domainsData?.total ?? 0;
 
     const expiringCount = domains.filter((d) => {
       if (!d.expireTime) return false
@@ -416,7 +421,7 @@ export function DashboardPage() {
     }, 0)
 
     return { totalDomains, expiringCount, totalAccounts, totalRecords }
-  }, [domains, domainsData?.total, accountsData])
+  }, [domainsFromApi, domainsData?.total, accountsData])
 
   const anyLoading = (domainsLoading && !domainsData) || (accountsLoading && !accountsData)
   const anyError = domainsError || accountsError
@@ -488,7 +493,7 @@ export function DashboardPage() {
       {/* Expiring Domains & Recent Logs */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <ExpiringDomains
-          domains={domains}
+          domains={domainsForDisplay}
           loading={domainsLoading && !domainsData}
           error={domainsError}
           onRetry={() => refetchDomains()}

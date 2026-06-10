@@ -66,9 +66,6 @@ async function handleBackup(context: AuthenticatedEventContext): Promise<Respons
       headers: {
         'Content-Type': 'text/plain',
         'Content-Disposition': `attachment; filename="dns-manager-backup-${new Date().toISOString().slice(0, 10)}.enc"`,
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization',
       },
     });
   } catch (error) {

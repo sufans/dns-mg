@@ -116,8 +116,8 @@ export function DomainDetailPage() {
   const navigate = useNavigate();
 
   // Data
-  const { data: domain, isLoading: domainLoading } = useDomainDetail(accountId!, domainId!);
-  const { data: records, isLoading: recordsLoading } = useRecords(accountId!, domainId!);
+  const { data: domain, isLoading: domainLoading } = useDomainDetail(accountId ?? '', domainId ?? '');
+  const { data: records, isLoading: recordsLoading } = useRecords(accountId ?? '', domainId ?? '');
   const { data: accounts } = useAccounts();
 
   const unifiedDomain = domain;
@@ -180,10 +180,11 @@ export function DomainDetailPage() {
   // Record CRUD handlers
   const handleAddRecord = useCallback(
     async (data: RecordFormData) => {
+      if (!accountId || !domainId) return;
       try {
         await createRecord.mutateAsync({
-          accountId: accountId!,
-          domainId: domainId!,
+          accountId,
+          domainId,
           name: data.name,
           type: data.type,
           value: data.value,
@@ -203,11 +204,11 @@ export function DomainDetailPage() {
 
   const handleEditRecord = useCallback(
     async (data: RecordFormData) => {
-      if (!editingRecord) return;
+      if (!editingRecord || !accountId || !domainId) return;
       try {
         await updateRecord.mutateAsync({
-          accountId: accountId!,
-          domainId: domainId!,
+          accountId,
+          domainId,
           recordId: editingRecord.id,
           name: data.name,
           type: data.type,
@@ -228,11 +229,11 @@ export function DomainDetailPage() {
   );
 
   const handleDeleteRecord = useCallback(async () => {
-    if (!deletingRecord) return;
+    if (!deletingRecord || !accountId || !domainId) return;
     try {
       await deleteRecord.mutateAsync({
-        accountId: accountId!,
-        domainId: domainId!,
+        accountId,
+        domainId,
         recordId: deletingRecord.id,
       });
       toast.success('记录删除成功');
@@ -245,10 +246,11 @@ export function DomainDetailPage() {
 
   const handleToggleStatus = useCallback(
     async (record: DnsRecord) => {
+      if (!accountId || !domainId) return;
       try {
         await toggleStatus.mutateAsync({
-          accountId: accountId!,
-          domainId: domainId!,
+          accountId,
+          domainId,
           recordId: record.id,
         });
         toast.success('状态切换成功');
@@ -261,10 +263,11 @@ export function DomainDetailPage() {
 
   // Batch operations
   const handleBatchEnable = useCallback(async () => {
+    if (!accountId || !domainId) return;
     try {
       await batchOp.mutateAsync({
-        accountId: accountId!,
-        domainId: domainId!,
+        accountId,
+        domainId,
         operation: 'enable',
         recordIds: Array.from(selectedIds),
       });
@@ -276,10 +279,11 @@ export function DomainDetailPage() {
   }, [accountId, domainId, selectedIds, batchOp, clearSelection]);
 
   const handleBatchDisable = useCallback(async () => {
+    if (!accountId || !domainId) return;
     try {
       await batchOp.mutateAsync({
-        accountId: accountId!,
-        domainId: domainId!,
+        accountId,
+        domainId,
         operation: 'disable',
         recordIds: Array.from(selectedIds),
       });
@@ -291,10 +295,11 @@ export function DomainDetailPage() {
   }, [accountId, domainId, selectedIds, batchOp, clearSelection]);
 
   const handleBatchDelete = useCallback(async () => {
+    if (!accountId || !domainId) return;
     try {
       await batchOp.mutateAsync({
-        accountId: accountId!,
-        domainId: domainId!,
+        accountId,
+        domainId,
         operation: 'delete',
         recordIds: Array.from(selectedIds),
       });
@@ -441,10 +446,11 @@ export function DomainDetailPage() {
                       variant="outline"
                       disabled={batchOp.isPending}
                       onClick={async () => {
+                        if (!accountId || !domainId) return;
                         try {
                           await batchOp.mutateAsync({
-                            accountId: accountId!,
-                            domainId: domainId!,
+                            accountId,
+                            domainId,
                             operation: 'ttl' as const,
                             recordIds: Array.from(selectedIds),
                             ttl: batchTtlValue,
@@ -471,10 +477,11 @@ export function DomainDetailPage() {
                       variant="outline"
                       disabled={batchOp.isPending}
                       onClick={async () => {
+                        if (!accountId || !domainId) return;
                         try {
                           await batchOp.mutateAsync({
-                            accountId: accountId!,
-                            domainId: domainId!,
+                            accountId,
+                            domainId,
                             operation: 'line' as const,
                             recordIds: Array.from(selectedIds),
                             line: batchLineValue,

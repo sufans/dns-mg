@@ -102,13 +102,12 @@ export function OperationLogs() {
   const handleSearch = useCallback(() => {
     setFilters((prev) => ({
       ...prev,
-      action: undefined,
-      targetType: undefined,
+      search: searchInput || undefined,
       startDate: startDate || undefined,
       endDate: endDate || undefined,
       page: 1,
     }));
-  }, [startDate, endDate]);
+  }, [searchInput, startDate, endDate]);
 
   const handleCleanup = useCallback(async () => {
     try {

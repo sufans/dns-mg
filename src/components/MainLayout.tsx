@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react"
-import { Outlet, useNavigate } from "react-router-dom"
+import { Outlet, useNavigate, useLocation } from "react-router-dom"
 import { Sidebar } from "@/components/Sidebar"
 import { TopBar } from "@/components/TopBar"
 import { cn } from "@/lib/utils"
@@ -20,15 +20,16 @@ function MainLayout() {
   })
   const [mobileOpen, setMobileOpen] = useState(false)
   const navigate = useNavigate()
+  const location = useLocation()
 
-  // Auth check: verify token exists AND is not expired
+  // Auth check: verify token exists AND is not expired on every navigation
   useEffect(() => {
     const token = localStorage.getItem("dns-manager-token")
     if (!token || !isTokenValid(token)) {
       localStorage.removeItem("dns-manager-token")
       navigate("/login", { replace: true })
     }
-  }, [navigate])
+  }, [navigate, location.pathname])
 
   // Persist sidebar state
   useEffect(() => {

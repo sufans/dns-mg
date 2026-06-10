@@ -5,6 +5,7 @@ import type { Domain } from '@/types';
 export interface DomainFilters {
   platform?: string;
   groupId?: string;
+  status?: string;
   search?: string;
   page?: number;
   pageSize?: number;
@@ -24,6 +25,7 @@ export function useDomains(filters?: DomainFilters) {
       const params = new URLSearchParams();
       if (filters?.platform) params.set('platform', filters.platform);
       if (filters?.groupId) params.set('groupId', filters.groupId);
+      if (filters?.status) params.set('status', filters.status);
       if (filters?.search) params.set('search', filters.search);
       if (filters?.page) params.set('page', String(filters.page));
       if (filters?.pageSize) params.set('pageSize', String(filters.pageSize));

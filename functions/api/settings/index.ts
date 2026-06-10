@@ -3,7 +3,7 @@ import type { PagesFunction, AuthenticatedEventContext } from '../../_shared/typ
 import { createResponse, withCors, getClientIP } from '../../_shared/utils';
 import { requireAuth } from '../../_shared/auth';
 import { logOperation } from '../../_shared/logger';
-import { RefreshIntervalSchema, LogRetentionDaysSchema } from '../../../_shared/schemas';
+import { RefreshIntervalSchema, LogRetentionDaysSchema } from '../../_shared/schemas';
 
 // Settings value validation map
 const settingsValidators: Record<string, z.ZodTypeAny> = {

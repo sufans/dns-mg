@@ -30,14 +30,14 @@ export function RefreshConfig() {
   const currentInterval = Number(getSettingValue(settings, 'auto_refresh_interval', '3600'));
 
   const [enabled, setEnabled] = useState(autoRefreshEnabled);
-  const [interval, setInterval] = useState(currentInterval);
+  const [interval, setIntervalValue] = useState(currentInterval);
 
   useEffect(() => {
     setEnabled(autoRefreshEnabled);
   }, [autoRefreshEnabled]);
 
   useEffect(() => {
-    setInterval(currentInterval);
+    setIntervalValue(currentInterval);
   }, [currentInterval]);
 
   const handleSave = async () => {
@@ -84,7 +84,7 @@ export function RefreshConfig() {
           <Label className="text-foreground">刷新间隔</Label>
           <select
             value={interval}
-            onChange={(e) => setInterval(Number(e.target.value))}
+            onChange={(e) => setIntervalValue(Number(e.target.value))}
             disabled={!enabled}
             className="h-8 w-full rounded-lg border border-input bg-input/30 px-2.5 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-50"
           >

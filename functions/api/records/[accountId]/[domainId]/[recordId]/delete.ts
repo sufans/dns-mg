@@ -5,7 +5,7 @@ import { createResponse, withCors, getClientIP } from '../../../../../_shared/ut
 import { requireAuth } from '../../../../../_shared/auth';
 import { decrypt } from '../../../../../_shared/crypto';
 import { logOperation } from '../../../../../_shared/logger';
-import { getAdapter } from '../../../../../../_shared/adapters/index';
+import { getAdapter } from '../../../../../_shared/adapters/index';
 import { waitForRateLimit, retryWithBackoff } from '../../../../../_shared/rateLimiter';
 
 interface AccountRow {
