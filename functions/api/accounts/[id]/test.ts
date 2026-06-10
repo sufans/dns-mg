@@ -2,7 +2,7 @@ import type { PagesFunction, AuthenticatedEventContext } from '../../../_shared/
 import { createResponse, withCors, getClientIP } from '../../../_shared/utils';
 import { requireAuth } from '../../../_shared/auth';
 import { decrypt } from '../../../_shared/crypto';
-import { getAdapter } from '../../../../src/plugins/dns-platforms/index';
+import { getAdapter } from '../../../../_shared/adapters/index';
 
 export const onRequestPost: PagesFunction = withCors(
   requireAuth(async (context: AuthenticatedEventContext) => {

@@ -7,8 +7,8 @@ import { decrypt } from './_shared/crypto';
 import { sendEmail } from './_shared/email';
 import { generateExpiryEmail } from './_shared/email-templates';
 import { logOperation } from './_shared/logger';
-import { getAdapter } from '../src/plugins/dns-platforms/index';
-import type { UnifiedDomain, PlatformCredentials } from '../src/plugins/dns-platforms/types';
+import { getAdapter } from './_shared/adapters/index';
+import type { UnifiedDomain, PlatformCredentials } from './_shared/adapters/types';
 
 interface AccountRow {
   id: string;

@@ -3,7 +3,7 @@ import type { PagesFunction, AuthenticatedEventContext } from '../../_shared/typ
 import { createResponse, withCors, getClientIP } from '../../_shared/utils';
 import { requireAuth } from '../../_shared/auth';
 import { encrypt, decrypt } from '../../_shared/crypto';
-import { getAdapter } from '../../../src/plugins/dns-platforms/index';
+import { getAdapter } from '../../../_shared/adapters/index';
 
 const PlatformSchema = z.enum(['dnshe', 'dnsneko']);
 

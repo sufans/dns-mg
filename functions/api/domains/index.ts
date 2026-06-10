@@ -5,8 +5,8 @@ import type { PagesFunction, AuthenticatedEventContext } from '../../_shared/typ
 import { createResponse, withCors } from '../../_shared/utils';
 import { requireAuth } from '../../_shared/auth';
 import { decrypt } from '../../_shared/crypto';
-import { getAdapter } from '../../../src/plugins/dns-platforms/index';
-import type { UnifiedDomain } from '../../../src/plugins/dns-platforms/types';
+import { getAdapter } from '../../../_shared/adapters/index';
+import type { UnifiedDomain } from '../../../_shared/adapters/types';
 import { waitForRateLimit, retryWithBackoff } from '../../_shared/rateLimiter';
 
 interface AccountRow {

@@ -6,8 +6,8 @@ import { createResponse, withCors, getClientIP } from '../../../../_shared/utils
 import { requireAuth } from '../../../../_shared/auth';
 import { decrypt } from '../../../../_shared/crypto';
 import { logOperation } from '../../../../_shared/logger';
-import { getAdapter } from '../../../../../src/plugins/dns-platforms/index';
-import type { CreateRecordInput } from '../../../../../src/plugins/dns-platforms/types';
+import { getAdapter } from '../../../../../_shared/adapters/index';
+import type { CreateRecordInput } from '../../../../../_shared/adapters/types';
 import { waitForRateLimit, retryWithBackoff } from '../../../../_shared/rateLimiter';
 
 interface AccountRow {

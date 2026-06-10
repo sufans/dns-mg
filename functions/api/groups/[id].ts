@@ -3,7 +3,7 @@ import type { PagesFunction, AuthenticatedEventContext } from '../../_shared/typ
 import { createResponse, withCors, getClientIP } from '../../_shared/utils';
 import { requireAuth } from '../../_shared/auth';
 import { logOperation } from '../../_shared/logger';
-import { UpdateAccountGroupSchema } from '../../../src/schemas';
+import { UpdateAccountGroupSchema } from '../../../_shared/schemas';
 
 export const onRequestPut: PagesFunction = withCors(
   requireAuth(async (context: AuthenticatedEventContext) => {
