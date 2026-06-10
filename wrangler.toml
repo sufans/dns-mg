@@ -5,7 +5,7 @@ compatibility_flags = ["nodejs_compat"]
 [[d1_databases]]
 binding = "DB"
 database_name = "dns-manager-db"
-database_id = "placeholder-database-id"
+database_id = "c4a08954-33d1-4282-a7c2-10a6a8f97752"
 
 [vars]
 ADMIN_USERNAME = "admin"
