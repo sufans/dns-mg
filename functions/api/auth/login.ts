@@ -34,6 +34,16 @@ export const onRequestPost: PagesFunction = withCors(async (context) => {
   }
 
   const { username, password } = parsed.data;
+
+  // Validate required environment variables
+  if (!context.env.ADMIN_PASSWORD_HASH) {
+    return createResponse(null, 503, '系统未完成初始化，请联系管理员');
+  }
+  if (!context.env.JWT_SECRET) {
+    return createResponse(null, 503, '系统未完成初始化，请联系管理员');
+  }
+
+  try {
   const ip = getClientIP(context.request);
   const userAgent = context.request.headers.get('User-Agent');
 
@@ -85,4 +95,7 @@ export const onRequestPost: PagesFunction = withCors(async (context) => {
     .run();
 
   return createResponse({ token, expiresIn: 86400 }, 200, '登录成功');
+  } catch {
+    return createResponse(null, 500, '登录服务暂时不可用，请稍后重试');
+  }
 });

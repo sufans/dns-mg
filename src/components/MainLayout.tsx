@@ -19,6 +19,7 @@ function MainLayout() {
     return localStorage.getItem("dns-manager-sidebar-collapsed") === "true"
   })
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [isAuthChecking, setIsAuthChecking] = useState(true)
   const navigate = useNavigate()
   const location = useLocation()
 
@@ -29,12 +30,17 @@ function MainLayout() {
       localStorage.removeItem("dns-manager-token")
       navigate("/login", { replace: true })
     }
+    setIsAuthChecking(false)
   }, [navigate, location.pathname])
 
   // Persist sidebar state
   useEffect(() => {
     localStorage.setItem("dns-manager-sidebar-collapsed", String(collapsed))
   }, [collapsed])
+
+  if (isAuthChecking) {
+    return <div className="min-h-screen bg-[#0f172a]" />
+  }
 
   return (
     <div className="min-h-screen bg-[#0f172a]">
