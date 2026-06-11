@@ -134,7 +134,7 @@ function SidebarDesktop({
         )}
       >
         <div className="flex size-8 items-center justify-center rounded-lg bg-gradient-to-br from-accent-indigo to-accent-purple">
-          <Globe className="size-4.5 text-white" />
+          <Globe className="size-[1.125rem] text-white" />
         </div>
         {!collapsed && (
           <span className="text-lg font-bold bg-gradient-to-r from-accent-indigo to-accent-purple bg-clip-text text-transparent">
@@ -191,7 +191,7 @@ function SidebarMobile({
         {/* Logo */}
         <div className="flex items-center h-16 px-4 gap-3">
           <div className="flex size-8 items-center justify-center rounded-lg bg-gradient-to-br from-accent-indigo to-accent-purple">
-            <Globe className="size-4.5 text-white" />
+            <Globe className="size-[1.125rem] text-white" />
           </div>
           <span className="text-lg font-bold bg-gradient-to-r from-accent-indigo to-accent-purple bg-clip-text text-transparent">
             DNS Manager

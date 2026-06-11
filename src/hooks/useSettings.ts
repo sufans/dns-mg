@@ -1,11 +1,11 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
-import type { SystemSetting, OperationLog } from '@/types';
+import type { OperationLog } from '@/types';
 
 export function useSettings() {
   return useQuery({
     queryKey: ['settings'],
-    queryFn: () => api.get<SystemSetting[]>('/settings'),
+    queryFn: () => api.get<Record<string, unknown>>('/settings'),
   });
 }
 
@@ -13,7 +13,7 @@ export function useUpdateSettings() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (data: Record<string, string>) => api.put<SystemSetting[]>('/settings', data),
+    mutationFn: (data: Record<string, string>) => api.put<Record<string, unknown>>('/settings', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['settings'] });
     },
@@ -83,10 +83,12 @@ export function useRestore() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (file: File) => {
-      const formData = new FormData();
-      formData.append('file', file);
-      return api.upload<{ restored: number }>('/backup', formData);
+    mutationFn: async ({ file, password }: { file: File; password: string }) => {
+      const fileContent = await file.text();
+      return api.post<{ accountCount: number; groupCount: number; settingCount: number }>('/backup', {
+        data: fileContent,
+        password,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries();

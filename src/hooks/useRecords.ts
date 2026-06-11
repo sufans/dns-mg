@@ -64,7 +64,7 @@ export function useDeleteRecord() {
       accountId: string;
       domainId: string;
       recordId: string;
-    }) => api.post<void>(`/records/${accountId}/${domainId}/${recordId}/delete`),
+    }) => api.delete<void>(`/records/${accountId}/${domainId}/${recordId}/delete`),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({
         queryKey: ['records', variables.accountId, variables.domainId],

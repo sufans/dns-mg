@@ -5,8 +5,9 @@ import {
   Plus,
   Pencil,
   Trash2,
-  Loader2,
   Info,
+  AlertTriangle,
+  Inbox,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -116,8 +117,8 @@ export function DomainDetailPage() {
   const navigate = useNavigate();
 
   // Data
-  const { data: domain, isLoading: domainLoading } = useDomainDetail(accountId ?? '', domainId ?? '');
-  const { data: records, isLoading: recordsLoading } = useRecords(accountId ?? '', domainId ?? '');
+  const { data: domain, isLoading: domainLoading, isError: domainIsError, error: domainError, refetch: refetchDomain } = useDomainDetail(accountId ?? '', domainId ?? '');
+  const { data: records, isLoading: recordsLoading, isError: recordsIsError, error: recordsError, refetch: refetchRecords } = useRecords(accountId ?? '', domainId ?? '');
   const { data: accounts } = useAccounts();
 
   const unifiedDomain = domain;
@@ -152,8 +153,6 @@ export function DomainDetailPage() {
   // Batch operation states
   const [batchTtlValue, setBatchTtlValue] = useState(600);
   const [batchLineValue, setBatchLineValue] = useState('default');
-
-  const isLoading = domainLoading || recordsLoading;
 
   // Selection handlers
   const toggleSelect = useCallback((id: string) => {
@@ -312,15 +311,7 @@ export function DomainDetailPage() {
     }
   }, [accountId, domainId, selectedIds, batchOp, clearSelection]);
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="size-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  if (!unifiedDomain) {
+  if (!unifiedDomain && !domainLoading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
@@ -328,6 +319,74 @@ export function DomainDetailPage() {
           <Button variant="outline" className="mt-4" onClick={() => navigate('/domains')}>
             返回域名列表
           </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (domainLoading) {
+    return (
+      <div className="space-y-6">
+        {/* Back button skeleton */}
+        <div className="flex items-center gap-4">
+          <div className="size-9 animate-pulse rounded bg-slate-800" />
+          <div className="space-y-2">
+            <div className="h-7 w-48 animate-pulse rounded bg-slate-800" />
+            <div className="h-4 w-36 animate-pulse rounded bg-slate-800" />
+          </div>
+        </div>
+        {/* Domain Info Card skeleton */}
+        <Card className="bg-slate-800/50 border-slate-700/50">
+          <CardHeader>
+            <div className="h-6 w-64 animate-pulse rounded bg-slate-700" />
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i}>
+                  <div className="h-3 w-14 animate-pulse rounded bg-slate-700 mb-2" />
+                  <div className="h-4 w-20 animate-pulse rounded bg-slate-700" />
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+        {/* Records skeleton */}
+        <Card className="bg-slate-800/50 border-slate-700/50">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="h-6 w-32 animate-pulse rounded bg-slate-700" />
+              <div className="h-8 w-24 animate-pulse rounded bg-slate-700" />
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="animate-pulse space-y-3 p-4">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="h-8 bg-slate-700 rounded" />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (domainIsError) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={() => navigate('/domains')}>
+            <ArrowLeft className="size-5" />
+          </Button>
+        </div>
+        <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+          <AlertTriangle className="size-10 mb-3" />
+          <p className="text-lg">加载域名详情失败</p>
+          <p className="text-sm text-slate-500 mt-1">{domainError?.message || '未知错误'}</p>
+          <div className="flex gap-3 mt-4">
+            <Button variant="outline" onClick={() => refetchDomain()}>重试</Button>
+            <Button variant="ghost" onClick={() => navigate('/domains')}>返回域名列表</Button>
+          </div>
         </div>
       </div>
     );
@@ -518,6 +577,7 @@ export function DomainDetailPage() {
                   <Checkbox
                     checked={unifiedRecords.length > 0 && selectedIds.size === unifiedRecords.length}
                     onCheckedChange={toggleSelectAll}
+                    aria-label="全选"
                   />
                 </TableHead>
                 <TableHead>主机记录</TableHead>
@@ -531,10 +591,38 @@ export function DomainDetailPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {unifiedRecords.length === 0 ? (
+              {recordsLoading ? (
+                Array.from({ length: 5 }).map((_, i) => (
+                  <TableRow key={i} className="border-slate-700/30">
+                    <TableCell><div className="h-4 w-4 animate-pulse rounded bg-slate-700" /></TableCell>
+                    <TableCell><div className="h-4 w-20 animate-pulse rounded bg-slate-700" /></TableCell>
+                    <TableCell><div className="h-5 w-14 animate-pulse rounded bg-slate-700" /></TableCell>
+                    <TableCell><div className="h-4 w-32 animate-pulse rounded bg-slate-700" /></TableCell>
+                    <TableCell><div className="h-4 w-16 animate-pulse rounded bg-slate-700" /></TableCell>
+                    <TableCell><div className="h-4 w-10 animate-pulse rounded bg-slate-700" /></TableCell>
+                    <TableCell><div className="h-4 w-8 animate-pulse rounded bg-slate-700" /></TableCell>
+                    <TableCell><div className="h-5 w-12 animate-pulse rounded bg-slate-700" /></TableCell>
+                    <TableCell><div className="h-4 w-16 animate-pulse rounded bg-slate-700" /></TableCell>
+                  </TableRow>
+                ))
+              ) : recordsIsError ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="h-32 text-center text-muted-foreground">
-                    暂无解析记录
+                  <TableCell colSpan={9} className="py-12 text-center">
+                    <div className="flex flex-col items-center justify-center text-slate-400">
+                      <AlertTriangle className="size-8 mb-2" />
+                      <p>加载失败: {recordsError?.message || '未知错误'}</p>
+                      <Button variant="outline" onClick={() => refetchRecords()} className="mt-3">重试</Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ) : unifiedRecords.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={9} className="py-12 text-center">
+                    <div className="flex flex-col items-center justify-center text-slate-500">
+                      <Inbox className="size-12 mb-3 text-slate-600" />
+                      <p className="text-lg font-medium">暂无解析记录</p>
+                      <p className="text-sm mt-1">点击上方按钮添加</p>
+                    </div>
                   </TableCell>
                 </TableRow>
               ) : (
@@ -549,9 +637,10 @@ export function DomainDetailPage() {
                       <Checkbox
                         checked={selectedIds.has(record.id)}
                         onCheckedChange={() => toggleSelect(record.id)}
+                        aria-label={`选择 ${record.name}`}
                       />
                     </TableCell>
-                    <TableCell className="font-medium">{record.name}</TableCell>
+                    <TableCell className="font-medium max-w-[200px] truncate" title={record.name}>{record.name}</TableCell>
                     <TableCell>
                       <Badge variant="outline" className="font-mono text-xs">
                         {record.type}
@@ -560,7 +649,7 @@ export function DomainDetailPage() {
                     <TableCell className="max-w-[200px] truncate" title={record.value}>
                       {record.value}
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{record.line || 'default'}</TableCell>
+                    <TableCell className="text-muted-foreground max-w-[150px] truncate" title={record.line || 'default'}>{record.line || 'default'}</TableCell>
                     <TableCell className="text-muted-foreground">{record.ttl}</TableCell>
                     <TableCell className="text-muted-foreground">
                       {record.priority != null ? record.priority : '-'}

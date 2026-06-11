@@ -3,13 +3,13 @@ import {
   Plus,
   Search,
   FolderOpen,
-  Loader2,
   Pencil,
   Trash2,
   Wifi,
   WifiOff,
   ArrowUpDown,
   Inbox,
+  AlertTriangle,
 } from "lucide-react"
 import { toast } from "sonner"
 import { useQueryClient } from "@tanstack/react-query"
@@ -78,7 +78,7 @@ const STATUS_CONFIG: Record<
 }
 
 export function AccountsPage() {
-  const { data: accounts, isLoading } = useAccounts()
+  const { data: accounts, isLoading, isError, error, refetch } = useAccounts()
   const { data: groups } = useGroups()
   const toggleMutation = useToggleAccount()
   const testConnectionMutation = useTestConnection()
@@ -277,9 +277,16 @@ export function AccountsPage() {
 
       {/* Account table */}
       {isLoading ? (
-        <div className="flex items-center justify-center py-16">
-          <Loader2 className="size-6 animate-spin text-slate-400" />
-          <span className="ml-3 text-slate-400">加载中...</span>
+        <div className="animate-pulse space-y-3">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div key={i} className="h-14 bg-slate-800 rounded-lg" />
+          ))}
+        </div>
+      ) : isError ? (
+        <div className="flex flex-col items-center justify-center py-16 text-slate-400">
+          <AlertTriangle className="size-8 mb-2" />
+          <p>加载失败: {error?.message || "未知错误"}</p>
+          <Button variant="outline" onClick={() => refetch()} className="mt-3">重试</Button>
         </div>
       ) : filteredAccounts.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -316,6 +323,7 @@ export function AccountsPage() {
                     type="button"
                     className="flex items-center gap-1 text-slate-400 hover:text-slate-200 transition-colors"
                     onClick={() => handleToggleSort("name")}
+                    aria-label="按名称排序"
                   >
                     账号名称
                     <ArrowUpDown className="size-3" />
@@ -329,6 +337,7 @@ export function AccountsPage() {
                     type="button"
                     className="flex items-center gap-1 text-slate-400 hover:text-slate-200 transition-colors"
                     onClick={() => handleToggleSort("createdAt")}
+                    aria-label="按创建时间排序"
                   >
                     创建时间
                     <ArrowUpDown className="size-3" />
@@ -352,13 +361,14 @@ export function AccountsPage() {
                       <Badge
                         variant="outline"
                         className={PLATFORM_COLORS[account.platform]}
+                        title={PLATFORM_LABELS[account.platform]}
                       >
                         {PLATFORM_LABELS[account.platform]}
                       </Badge>
                     </TableCell>
 
                     {/* Name */}
-                    <TableCell className="font-medium text-slate-200">
+                    <TableCell className="font-medium text-slate-200 max-w-[200px] truncate" title={account.name}>
                       {account.name}
                     </TableCell>
 

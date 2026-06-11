@@ -24,10 +24,10 @@ import { useBackup, useRestore, useSettings } from '@/hooks/useSettings';
 import { useVerifyPassword } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 
-function getSettingValue(settings: { key: string; value: string }[] | undefined, key: string, fallback: string): string {
+function getSettingValue(settings: Record<string, unknown> | undefined, key: string, fallback: string): string {
   if (!settings) return fallback;
-  const s = settings.find((item) => item.key === key);
-  return s ? s.value : fallback;
+  const val = settings[key];
+  return typeof val === 'string' ? val : String(val ?? fallback);
 }
 
 function formatDateTime(iso: string): string {
@@ -124,7 +124,7 @@ export function BackupRestore() {
     }
 
     try {
-      await restoreMutation.mutateAsync(restoreFile);
+      await restoreMutation.mutateAsync({ file: restoreFile, password: restorePassword });
       toast.success('数据恢复成功');
       setRestoreDialogOpen(false);
       setRestoreFile(null);

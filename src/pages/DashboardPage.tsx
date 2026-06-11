@@ -190,7 +190,7 @@ function ExpiringDomains({ domains, loading, error, onRetry }: ExpiringDomainsPr
                       getRowClass(days, isExpired)
                     )}
                   >
-                    <td className="px-5 py-3 font-medium text-foreground">
+                    <td className="px-5 py-3 font-medium text-foreground max-w-[200px] truncate" title={domain.domain}>
                       {domain.domain}
                     </td>
                     <td className="px-5 py-3 text-muted-foreground">

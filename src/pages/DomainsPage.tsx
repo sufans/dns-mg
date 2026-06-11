@@ -9,6 +9,7 @@ import {
   ArrowUpDown,
   Globe,
   FileX2,
+  AlertTriangle,
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -161,7 +162,7 @@ export function DomainsPage() {
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
 
   // Data
-  const { data: domainsData, isLoading } = useDomains({
+  const { data: domainsData, isLoading, isError, error, refetch } = useDomains({
     platform: platformFilter !== 'all' ? platformFilter : undefined,
     groupId: groupFilter !== 'all' ? groupFilter : undefined,
     status: statusFilter !== 'all' ? statusFilter : undefined,
@@ -374,13 +375,23 @@ export function DomainsPage() {
             <TableBody>
               {isLoading ? (
                 Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)
+              ) : isError ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="py-12 text-center">
+                    <div className="flex flex-col items-center justify-center text-slate-400">
+                      <AlertTriangle className="size-8 mb-2" />
+                      <p>加载失败: {error?.message || '未知错误'}</p>
+                      <Button variant="outline" onClick={() => refetch()} className="mt-3">重试</Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
               ) : filteredDomains.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="h-48 text-center">
-                    <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                      <FileX2 className="size-10" />
-                      <p>暂无域名数据</p>
-                      <p className="text-xs">请添加 API 账号后刷新</p>
+                  <TableCell colSpan={7} className="py-12 text-center">
+                    <div className="flex flex-col items-center justify-center text-slate-500">
+                      <FileX2 className="size-12 mb-3 text-slate-600" />
+                      <p className="text-lg font-medium">暂无域名</p>
+                      <p className="text-sm mt-1">添加 API 账号后会自动同步域名</p>
                     </div>
                   </TableCell>
                 </TableRow>
