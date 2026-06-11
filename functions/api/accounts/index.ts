@@ -1,95 +1,75 @@
-import type { PagesFunction, AuthenticatedEventContext } from '../../_shared/types';
-import { createResponse, withCors, getClientIP } from '../../_shared/utils';
-import { requireAuth } from '../../_shared/auth';
-import { decrypt } from '../../_shared/crypto';
+import { requireAuth, requireSecondVerification } from '../../_shared/auth';
+import { encryptJson } from '../../_shared/crypto';
+import { decryptAccountConfig, listAccountRows, toPublicAccount } from '../../_shared/db';
+import { logOperation } from '../../_shared/logger';
+import { errorResponse, jsonResponse } from '../../_shared/response';
+import { createAccountSchema } from '../../_shared/validators';
+import { adapterForAccount } from '../../_shared/platforms/factory';
+import { reservePlatformRequest } from '../../_shared/rate-limit';
+import type { ApiAccountConfig, ApiAccountRow, Env } from '../../_shared/types';
 
-interface AccountRow {
-  id: string;
-  name: string;
-  platform: string;
-  group_id: string | null;
-  credentials_encrypted: string;
-  is_enabled: number;
-  connection_status: string;
-  last_tested_at: string | null;
-  created_at: string;
-  updated_at: string;
+function normalizeConfig(platform: string, credentials: Record<string, string>): ApiAccountConfig {
+  if (platform === 'dnshe') return { apiKey: credentials.apiKey, apiSecret: credentials.apiSecret };
+  return { username: credentials.username, apiKey: credentials.apiKey };
 }
 
-interface GroupRow {
-  id: string;
-  name: string;
-  color: string;
-  sort_order: number;
-}
-
-function maskCredential(value: string | undefined): string | undefined {
-  if (!value) return undefined;
-  if (value.length <= 4) return '****';
-  return '****' + value.slice(-4);
-}
-
-function maskCredentials(
-  credentials: Record<string, string>,
-): Record<string, string> {
-  const masked: Record<string, string> = {};
-  for (const [key, value] of Object.entries(credentials)) {
-    masked[key] = maskCredential(value) ?? '';
+async function updateCheckStatus(env: Env, row: ApiAccountRow, config: ApiAccountConfig): Promise<void> {
+  const adapter = adapterForAccount(row);
+  await reservePlatformRequest(env, row.id, adapter.rateLimit.accountWindowLimit, adapter.rateLimit.windowSeconds);
+  try {
+    await adapter.listDomains({ platform: row.platform, config }, { page: 1, size: 1 });
+    await env.DB.prepare('UPDATE api_accounts SET last_check_at = ?, last_check_status = ?, last_error = NULL WHERE id = ?')
+      .bind(new Date().toISOString(), 'success', row.id)
+      .run();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '连接检测失败';
+    await env.DB.prepare('UPDATE api_accounts SET last_check_at = ?, last_check_status = ?, last_error = ? WHERE id = ?')
+      .bind(new Date().toISOString(), 'failed', message, row.id)
+      .run();
+    throw error;
   }
-  return masked;
 }
 
-export const onRequestGet: PagesFunction = withCors(
-  requireAuth(async (context: AuthenticatedEventContext) => {
-    const { results: accounts } = await context.env.DB
-      .prepare(
-        `SELECT id, name, platform, group_id, credentials_encrypted, is_enabled, connection_status, last_tested_at, created_at, updated_at
-         FROM api_accounts
-         ORDER BY created_at DESC`,
-      )
-      .all<AccountRow>();
+export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
+  const auth = await requireAuth(request, env);
+  if (auth instanceof Response) return auth;
+  const rows = await listAccountRows(env);
+  const accounts = await Promise.all(rows.map(async (row) => toPublicAccount(row, await decryptAccountConfig(env, row))));
+  return jsonResponse({ accounts });
+};
 
-    // Fetch all groups for mapping
-    const { results: groups } = await context.env.DB
-      .prepare(`SELECT id, name, color, sort_order FROM account_groups ORDER BY sort_order ASC`)
-      .all<GroupRow>();
+export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+  const auth = await requireAuth(request, env);
+  if (auth instanceof Response) return auth;
+  const input = createAccountSchema.parse(await request.json());
+  const second = await requireSecondVerification(input.verifyPassword, env);
+  if (second) return second;
 
-    const groupMap = new Map<string, GroupRow>();
-    for (const group of groups) {
-      groupMap.set(group.id, group);
+  const config = normalizeConfig(input.platform, input.credentials);
+  const encrypted = await encryptJson(config, env.ENCRYPTION_KEY);
+  const result = await env.DB.prepare(
+    `INSERT INTO api_accounts (platform, name, group_id, encrypted_config_json, enabled)
+     VALUES (?, ?, ?, ?, ?)`
+  )
+    .bind(input.platform, input.name, input.groupId ?? null, encrypted, input.enabled ? 1 : 0)
+    .run();
+  const id = Number(result.meta.last_row_id);
+  const row = await env.DB.prepare(
+    `SELECT a.*, g.name AS group_name, g.color AS group_color
+     FROM api_accounts a LEFT JOIN api_groups g ON g.id = a.group_id WHERE a.id = ?`
+  )
+    .bind(id)
+    .first<ApiAccountRow>();
+  if (!row) return errorResponse('账号创建失败', 500, 'account_create_failed');
+
+  let warning: string | null = null;
+  if (input.checkConnection) {
+    try {
+      await updateCheckStatus(env, row, config);
+    } catch (error) {
+      warning = error instanceof Error ? error.message : '连接检测失败';
     }
-
-    const result = await Promise.all(
-      accounts.map(async (account) => {
-        let maskedCreds: Record<string, string> = {};
-        try {
-          const decrypted = await decrypt(account.credentials_encrypted, context.env.ENCRYPTION_KEY);
-          const parsed = JSON.parse(decrypted) as Record<string, string>;
-          maskedCreds = maskCredentials(parsed);
-        } catch {
-          maskedCreds = { error: '无法解密凭据' };
-        }
-
-        const group = account.group_id ? groupMap.get(account.group_id) : null;
-
-        return {
-          id: account.id,
-          name: account.name,
-          platform: account.platform,
-          groupId: account.group_id,
-          group: group
-            ? { id: group.id, name: group.name, color: group.color, sortOrder: group.sort_order }
-            : null,
-          credentials: maskedCreds,
-          isEnabled: account.is_enabled === 1,
-          connectionStatus: account.connection_status,
-          lastTestedAt: account.last_tested_at,
-          createdAt: account.created_at,
-          updatedAt: account.updated_at,
-        };
-      }),
-    );
-
-    return createResponse(result, 200, 'ok');
-  }),
-);
+  }
+  await logOperation(env, request, auth, { action: 'account.create', targetType: 'api_account', targetId: String(id), detail: { platform: input.platform, name: input.name }, success: true });
+  return jsonResponse({ account: toPublicAccount(row, config), warning });
+};

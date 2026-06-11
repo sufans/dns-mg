@@ -1,23 +1,16 @@
-import type { PagesFunction } from '../../_shared/types';
-import { createResponse, withCors } from '../../_shared/utils';
-import { verifyJWTWithGrace, signJWT } from '../../_shared/auth';
+import { requireAuth } from '../../_shared/auth';
+import { jsonResponse } from '../../_shared/response';
+import { CSRF_COOKIE, SESSION_COOKIE, serializeCookie } from '../../_shared/cookies';
+import { randomToken, signJwt } from '../../_shared/jwt';
+import type { Env } from '../../_shared/types';
 
-export const onRequestPost: PagesFunction = withCors(async (context) => {
-  const authHeader = context.request.headers.get('Authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return createResponse(null, 401, '缺少认证令牌');
-  }
-
-  const token = authHeader.slice(7);
-
-  // Verify with grace period (allow expired tokens within 5 minutes)
-  const payload = await verifyJWTWithGrace(token, context.env.JWT_SECRET, 300);
-  if (!payload) {
-    return createResponse(null, 401, '认证令牌无效或已过期');
-  }
-
-  // Sign a new JWT
-  const newToken = await signJWT({ sub: payload.sub }, context.env.JWT_SECRET, '24h');
-
-  return createResponse({ token: newToken, expiresIn: 86400 }, 200, '令牌刷新成功');
-});
+export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+  const auth = await requireAuth(request, env);
+  if (auth instanceof Response) return auth;
+  const csrf = randomToken(32);
+  const token = await signJwt({ username: auth.username, csrf }, env.JWT_SECRET, 24 * 60 * 60);
+  const headers = new Headers();
+  headers.append('Set-Cookie', serializeCookie(SESSION_COOKIE, token, { httpOnly: true, maxAge: 86400 }));
+  headers.append('Set-Cookie', serializeCookie(CSRF_COOKIE, csrf, { httpOnly: false, maxAge: 86400 }));
+  return jsonResponse({ username: auth.username, csrf, expiresIn: 86400 }, { headers });
+};

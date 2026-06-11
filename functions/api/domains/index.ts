@@ -1,132 +1,56 @@
-// GET /api/domains - Aggregate domain list from all enabled accounts
-// Protected by requireAuth
-// Query params: page, size, platform, groupId, status, keyword
-import type { PagesFunction, AuthenticatedEventContext } from '../../_shared/types';
-import { createResponse, withCors } from '../../_shared/utils';
 import { requireAuth } from '../../_shared/auth';
-import { decrypt } from '../../_shared/crypto';
-import { getAdapter } from '../../_shared/adapters/index';
-import type { UnifiedDomain } from '../../_shared/adapters/types';
-import { waitForRateLimit, retryWithBackoff } from '../../_shared/rateLimiter';
+import { decryptAccountConfig, listAccountRows } from '../../_shared/db';
+import { readDomainCache, writeDomainCache } from '../../_shared/domain-cache';
+import { logOperation } from '../../_shared/logger';
+import { adapterForAccount } from '../../_shared/platforms/factory';
+import { cleanupRateLimits, reservePlatformRequest } from '../../_shared/rate-limit';
+import { jsonResponse } from '../../_shared/response';
+import type { Env, UnifiedDomain } from '../../_shared/types';
 
-interface AccountRow {
-  id: string;
-  name: string;
-  platform: string;
-  group_id: string | null;
-  credentials_encrypted: string;
-  is_enabled: number;
+function matchesFilters(domain: UnifiedDomain, params: URLSearchParams): boolean {
+  const platform = params.get('platform');
+  const groupId = params.get('groupId');
+  const keyword = params.get('keyword')?.toLowerCase();
+  const status = params.get('status');
+  const expiresFrom = params.get('expiresFrom');
+  const expiresTo = params.get('expiresTo');
+  if (platform && domain.platform !== platform) return false;
+  if (groupId && String(domain.groupId ?? '') !== groupId) return false;
+  if (keyword && !domain.name.toLowerCase().includes(keyword)) return false;
+  if (status === 'expired' && !domain.expired) return false;
+  if (status === 'active' && domain.expired) return false;
+  if (expiresFrom && (!domain.expiresAt || new Date(domain.expiresAt).getTime() < new Date(expiresFrom).getTime())) return false;
+  if (expiresTo && (!domain.expiresAt || new Date(domain.expiresAt).getTime() > new Date(expiresTo).getTime())) return false;
+  return true;
 }
 
-// Rate limit configs per platform
-const RATE_LIMITS: Record<string, { maxRequests: number; windowMs: number }> = {
-  dnshe: { maxRequests: 60, windowMs: 60_000 },
-  dnsneko: { maxRequests: 30, windowMs: 60_000 },
-};
+export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
+  const auth = await requireAuth(request, env);
+  if (auth instanceof Response) return auth;
+  await cleanupRateLimits(env);
+  const url = new URL(request.url);
+  const refresh = url.searchParams.get('refresh') === '1';
+  const accounts = await listAccountRows(env, true);
+  const results: UnifiedDomain[] = [];
+  const errors: Array<{ accountId: number; accountName: string; error: string }> = [];
 
-export const onRequestGet: PagesFunction = withCors(
-  requireAuth(async (context: AuthenticatedEventContext) => {
-    const url = new URL(context.request.url);
-    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10) || 1);
-    const size = Math.min(100, Math.max(1, parseInt(url.searchParams.get('size') || '20', 10) || 20));
-    const platformFilter = url.searchParams.get('platform') || undefined;
-    const groupIdFilter = url.searchParams.get('groupId') || undefined;
-    const statusFilter = url.searchParams.get('status') || undefined;
-    const keyword = url.searchParams.get('keyword') || undefined;
-
-    // 1. Get all enabled API accounts from D1
-    let query = `SELECT id, name, platform, group_id, credentials_encrypted, is_enabled FROM api_accounts WHERE is_enabled = 1`;
-    const binds: unknown[] = [];
-
-    if (platformFilter) {
-      query += ` AND platform = ?`;
-      binds.push(platformFilter);
-    }
-    if (groupIdFilter) {
-      query += ` AND group_id = ?`;
-      binds.push(groupIdFilter);
-    }
-
-    query += ` ORDER BY created_at ASC`;
-
-    const { results: accounts } = await context.env.DB
-      .prepare(query)
-      .bind(...binds)
-      .all<AccountRow>();
-
-    if (accounts.length === 0) {
-      return createResponse({
-        domains: [],
-        total: 0,
-        page,
-        pageSize: size,
-        hasMore: false,
-      }, 200, 'ok');
-    }
-
-    // 2. For each account, decrypt credentials and call adapter.listDomains()
-    const domainPromises = accounts.map(async (account) => {
-      try {
-        const decrypted = await decrypt(account.credentials_encrypted, context.env.ENCRYPTION_KEY);
-        const credentials = JSON.parse(decrypted) as Record<string, string>;
-
-        const rateLimit = RATE_LIMITS[account.platform] ?? { maxRequests: 30, windowMs: 60_000 };
-        await waitForRateLimit(`domains:${account.id}`, rateLimit.maxRequests, rateLimit.windowMs);
-
-        const adapter = getAdapter(account.platform);
-        const result = await retryWithBackoff(() =>
-          adapter.listDomains(credentials as never),
-        );
-
-        // Add accountId and platform info to each domain
-        const domains = result.domains.map((domain) => ({
-          ...domain,
-          accountId: account.id,
-          platform: account.platform as 'dnshe' | 'dnsneko',
-          accountName: account.name,
-        }));
-
-        return domains;
-      } catch (error) {
-        // Gracefully handle errors - return empty for this account
-        console.error(`Failed to fetch domains for account ${account.id}:`, error);
-        return [];
+  for (const row of accounts) {
+    try {
+      const cacheKey = 'domain-list';
+      let domains = refresh ? null : await readDomainCache(env, row.id, cacheKey);
+      if (!domains) {
+        const adapter = adapterForAccount(row);
+        await reservePlatformRequest(env, row.id, adapter.rateLimit.accountWindowLimit, adapter.rateLimit.windowSeconds);
+        const config = await decryptAccountConfig(env, row);
+        domains = await adapter.listDomains({ platform: row.platform, config }, { page: 1, size: 100 });
+        await writeDomainCache(env, row.id, cacheKey, domains, 5 * 60);
       }
-    });
-
-    const domainArrays = await Promise.all(domainPromises);
-    let allDomains: (UnifiedDomain & { accountName: string })[] = domainArrays.flat();
-
-    // 3. Apply client-side filtering
-    if (keyword) {
-      const kw = keyword.toLowerCase();
-      allDomains = allDomains.filter((d) =>
-        d.domain.toLowerCase().includes(kw) ||
-        (d.rootDomain && d.rootDomain.toLowerCase().includes(kw)) ||
-        (d.subdomain && d.subdomain.toLowerCase().includes(kw)) ||
-        (d.userRemark && d.userRemark.toLowerCase().includes(kw)),
-      );
+      results.push(...domains.filter((domain) => matchesFilters(domain, url.searchParams)));
+    } catch (error) {
+      errors.push({ accountId: row.id, accountName: row.name, error: error instanceof Error ? error.message : '未知错误' });
     }
-
-    if (statusFilter) {
-      allDomains = allDomains.filter((d) => {
-        const statusStr = String(d.status).toLowerCase();
-        return statusStr === statusFilter.toLowerCase();
-      });
-    }
-
-    // 4. Apply pagination
-    const total = allDomains.length;
-    const startIndex = (page - 1) * size;
-    const paginatedDomains = allDomains.slice(startIndex, startIndex + size);
-    const hasMore = startIndex + size < total;
-
-    return createResponse({
-      domains: paginatedDomains,
-      total,
-      page,
-      pageSize: size,
-      hasMore,
-    }, 200, 'ok');
-  }),
-);
+  }
+  const sorted = results.sort((a, b) => (a.remainingDays ?? 999999) - (b.remainingDays ?? 999999));
+  await logOperation(env, request, auth, { action: 'domain.list', targetType: 'domain', detail: { count: sorted.length, errors }, success: errors.length === 0 });
+  return jsonResponse({ domains: sorted, errors });
+};

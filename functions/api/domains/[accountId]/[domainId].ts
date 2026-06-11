@@ -1,74 +1,20 @@
-// GET /api/domains/:accountId/:domainId - Get domain detail
-// Protected by requireAuth
-import type { PagesFunction, AuthenticatedEventContext } from '../../../_shared/types';
-import { createResponse, withCors } from '../../../_shared/utils';
 import { requireAuth } from '../../../_shared/auth';
-import { decrypt } from '../../../_shared/crypto';
-import { getAdapter } from '../../../_shared/adapters/index';
-import { waitForRateLimit, retryWithBackoff } from '../../../_shared/rateLimiter';
+import { getDecryptedAccount } from '../../../_shared/db';
+import { adapterForAccount } from '../../../_shared/platforms/factory';
+import { reservePlatformRequest } from '../../../_shared/rate-limit';
+import { jsonResponse, notFound } from '../../../_shared/response';
+import type { Env } from '../../../_shared/types';
 
-interface AccountRow {
-  id: string;
-  name: string;
-  platform: string;
-  credentials_encrypted: string;
-}
-
-const RATE_LIMITS: Record<string, { maxRequests: number; windowMs: number }> = {
-  dnshe: { maxRequests: 60, windowMs: 60_000 },
-  dnsneko: { maxRequests: 30, windowMs: 60_000 },
+export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
+  const auth = await requireAuth(request, env);
+  if (auth instanceof Response) return auth;
+  const accountId = Number(params.accountId);
+  const domainId = String(params.domainId);
+  const account = await getDecryptedAccount(env, accountId);
+  if (!account || !account.row.enabled) return notFound();
+  const adapter = adapterForAccount(account.row);
+  await reservePlatformRequest(env, accountId, adapter.rateLimit.accountWindowLimit, adapter.rateLimit.windowSeconds);
+  const credentials = { platform: account.row.platform, config: account.config } as const;
+  const [domain, records] = await Promise.all([adapter.getDomain(credentials, domainId), adapter.listRecords(credentials, domainId)]);
+  return jsonResponse({ domain, records });
 };
-
-export const onRequestGet: PagesFunction = withCors(
-  requireAuth(async (context: AuthenticatedEventContext) => {
-    const accountId = context.params.accountId as string;
-    const domainId = context.params.domainId as string;
-
-    if (!accountId || !domainId) {
-      return createResponse(null, 400, '缺少账号ID或域名ID');
-    }
-
-    // 1. Get account from D1
-    const account = await context.env.DB
-      .prepare(
-        `SELECT id, name, platform, credentials_encrypted FROM api_accounts WHERE id = ? AND is_enabled = 1`,
-      )
-      .bind(accountId)
-      .first<AccountRow>();
-
-    if (!account) {
-      return createResponse(null, 404, '账号不存在或已禁用');
-    }
-
-    // 2. Decrypt credentials
-    let credentials: Record<string, string>;
-    try {
-      const decrypted = await decrypt(account.credentials_encrypted, context.env.ENCRYPTION_KEY);
-      credentials = JSON.parse(decrypted) as Record<string, string>;
-    } catch {
-      return createResponse(null, 500, '凭据解密失败');
-    }
-
-    // 3. Call adapter.getDomainDetail
-    try {
-      const rateLimit = RATE_LIMITS[account.platform] ?? { maxRequests: 30, windowMs: 60_000 };
-      await waitForRateLimit(`domain-detail:${account.id}`, rateLimit.maxRequests, rateLimit.windowMs);
-
-      const adapter = getAdapter(account.platform);
-      const domain = await retryWithBackoff(() =>
-        adapter.getDomainDetail(credentials as never, domainId),
-      );
-
-      // 4. Return domain detail with account info
-      return createResponse({
-        ...domain,
-        accountId: account.id,
-        platform: account.platform as 'dnshe' | 'dnsneko',
-        accountName: account.name,
-      }, 200, 'ok');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '获取域名详情失败';
-      return createResponse(null, 502, message);
-    }
-  }),
-);

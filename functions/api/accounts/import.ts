@@ -1,139 +1,31 @@
-import { z } from 'zod';
-import type { PagesFunction, AuthenticatedEventContext } from '../../_shared/types';
-import { createResponse, withCors, getClientIP } from '../../_shared/utils';
-import { requireAuth, verifyPassword } from '../../_shared/auth';
-import { encrypt, decrypt } from '../../_shared/crypto';
+import { requireAuth, requireSecondVerification } from '../../_shared/auth';
+import { decryptJson } from '../../_shared/crypto';
+import { logOperation } from '../../_shared/logger';
+import { jsonResponse } from '../../_shared/response';
+import { importAccountsSchema } from '../../_shared/validators';
+import type { Env } from '../../_shared/types';
 
-const ImportSchema = z.object({
-  data: z.string().min(1, '导入数据不能为空'),
-  password: z.string().min(1, '密码不能为空'),
-});
-
-interface ImportAccount {
-  name: string;
-  platform: string;
-  groupId?: string | null;
-  credentials: Record<string, string>;
-}
-
-interface ImportData {
+interface AccountsExport {
   version: number;
-  accounts: ImportAccount[];
-  exportedAt: string;
+  accounts: Array<{ platform: string; name: string; groupId: number | null; encryptedConfigJson: string; enabled: boolean }>;
 }
 
-export const onRequestPost: PagesFunction = withCors(
-  requireAuth(async (context: AuthenticatedEventContext) => {
-    let body: unknown;
-    try {
-      body = await context.request.json();
-    } catch {
-      return createResponse(null, 400, '请求体格式错误');
-    }
-
-    const parsed = ImportSchema.safeParse(body);
-    if (!parsed.success) {
-      const firstError = parsed.error.issues[0];
-      return createResponse(null, 400, firstError?.message ?? '输入验证失败');
-    }
-
-    const { data, password } = parsed.data;
-
-    // Verify admin password
-    const isValid = verifyPassword(password, context.env.ADMIN_PASSWORD_HASH);
-    if (!isValid) {
-      return createResponse(null, 401, '密码验证失败');
-    }
-
-    // Decrypt the import data
-    let importJson: string;
-    try {
-      importJson = await decrypt(data, context.env.ENCRYPTION_KEY);
-    } catch {
-      return createResponse(null, 400, '导入数据解密失败，数据可能已损坏');
-    }
-
-    // Validate structure
-    let importData: ImportData;
-    try {
-      importData = JSON.parse(importJson) as ImportData;
-    } catch {
-      return createResponse(null, 400, '导入数据格式无效');
-    }
-
-    if (!importData.accounts || !Array.isArray(importData.accounts)) {
-      return createResponse(null, 400, '导入数据缺少账号列表');
-    }
-
-    const validPlatforms = ['dnshe', 'dnsneko'];
-    let imported = 0;
-    let skipped = 0;
-    let failed = 0;
-
-    for (const account of importData.accounts) {
-      // Validate each account
-      if (!account.name || !account.platform || !account.credentials) {
-        skipped++;
-        continue;
-      }
-
-      if (!validPlatforms.includes(account.platform)) {
-        skipped++;
-        continue;
-      }
-
-      // Filter out empty credentials
-      const filteredCreds: Record<string, string> = {};
-      for (const [key, value] of Object.entries(account.credentials)) {
-        if (value !== undefined && value !== '') {
-          filteredCreds[key] = value;
-        }
-      }
-
-      if (Object.keys(filteredCreds).length === 0) {
-        skipped++;
-        continue;
-      }
-
-      try {
-        const credentialsJson = JSON.stringify(filteredCreds);
-        const credentialsEncrypted = await encrypt(credentialsJson, context.env.ENCRYPTION_KEY);
-        const id = crypto.randomUUID();
-
-        await context.env.DB
-          .prepare(
-            `INSERT INTO api_accounts (id, name, platform, group_id, credentials_encrypted, is_enabled, connection_status, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, 1, 'unknown', datetime('now'), datetime('now'))`,
-          )
-          .bind(id, account.name, account.platform, account.groupId ?? null, credentialsEncrypted)
-          .run();
-
-        imported++;
-      } catch {
-        // Likely duplicate or DB error
-        failed++;
-      }
-    }
-
-    // Log operation
-    const ip = getClientIP(context.request);
-    const userAgent = context.request.headers.get('User-Agent');
-    await context.env.DB
-      .prepare(
-        `INSERT INTO operation_logs (action, target_type, target_id, detail, ip_address, user_agent, status, created_at)
-         VALUES ('import_accounts', 'account', NULL, ?, ?, ?, 'success', datetime('now'))`,
-      )
-      .bind(
-        `导入API账号: 成功${imported}个, 跳过${skipped}个, 失败${failed}个`,
-        ip,
-        userAgent,
-      )
+export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+  const auth = await requireAuth(request, env);
+  if (auth instanceof Response) return auth;
+  const input = importAccountsSchema.parse(await request.json());
+  const second = await requireSecondVerification(input.verifyPassword, env);
+  if (second) return second;
+  const payload = await decryptJson<AccountsExport>(input.encryptedPayload, env.ENCRYPTION_KEY);
+  if (payload.version !== 1) throw new Error('不支持的账号导入格式');
+  for (const account of payload.accounts) {
+    await env.DB.prepare(
+      `INSERT INTO api_accounts (platform, name, group_id, encrypted_config_json, enabled)
+       VALUES (?, ?, ?, ?, ?)`
+    )
+      .bind(account.platform, account.name, account.groupId, account.encryptedConfigJson, account.enabled ? 1 : 0)
       .run();
-
-    return createResponse(
-      { imported, skipped, failed, total: importData.accounts.length },
-      200,
-      '导入完成',
-    );
-  }),
-);
+  }
+  await logOperation(env, request, auth, { action: 'account.import', targetType: 'api_account', detail: { count: payload.accounts.length }, success: true });
+  return jsonResponse({ imported: payload.accounts.length });
+};

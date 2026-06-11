@@ -1,724 +1,101 @@
-import { useState, useMemo, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import {
-  ArrowLeft,
-  Plus,
-  Pencil,
-  Trash2,
-  Info,
-  AlertTriangle,
-  Inbox,
-} from 'lucide-react';
-import { toast } from 'sonner';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  AddRecordDialog,
-  EditRecordDialog,
-  DeleteRecordDialog,
-  type RecordFormData,
-} from '@/components/domains/RecordDialog';
-import { useDomainDetail } from '@/hooks/useDomains';
-import { useAccounts } from '@/hooks/useAccounts';
-import {
-  useRecords,
-  useCreateRecord,
-  useUpdateRecord,
-  useDeleteRecord,
-  useToggleRecordStatus,
-  useBatchOperation,
-} from '@/hooks/useRecords';
-import type { Domain, DnsRecord } from '@/types';
+import { useState } from 'react';
+import type { FormEvent } from 'react';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
+import { Badge } from '../components/ui/badge';
+import { Button } from '../components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+import { Select } from '../components/ui/select';
+import { TD, TH, TR, TBody, THead, Table } from '../components/ui/table';
+import { api } from '../lib/api';
+import { navigate } from '../lib/router';
+import { queryClient } from '../lib/query';
+import { formatDate } from '../lib/utils';
+import type { UnifiedDomain, UnifiedRecord } from '../types/models';
 
-function formatDate(dateStr?: string): string {
-  if (!dateStr) return '-';
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return '-';
-  return d.toLocaleDateString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
+const recordTypes = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA'] as const;
+
+export function DomainDetailPage({ accountId, domainId }: { accountId: string; domainId: string }): JSX.Element {
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ name: '@', type: 'A', value: '', line: 'default', ttl: 600, priority: '', remark: '' });
+  const query = useQuery({
+    queryKey: ['domain-detail', accountId, domainId],
+    queryFn: () => api.get<{ domain: UnifiedDomain; records: UnifiedRecord[] }>(`/api/domains/${accountId}/${domainId}`)
   });
-}
-
-function getDaysRemaining(expireTime?: string): number | null {
-  if (!expireTime) return null;
-  const expiry = new Date(expireTime).getTime();
-  const now = Date.now();
-  return Math.ceil((expiry - now) / (1000 * 60 * 60 * 24));
-}
-
-function getDomainStatus(domain: Domain): 'active' | 'expired' | 'suspended' {
-  if (domain.expired) return 'expired';
-  if (domain.status === 'suspended') return 'suspended';
-  const days = getDaysRemaining(domain.expireTime);
-  if (days !== null && days <= 0) return 'expired';
-  return 'active';
-}
-
-function getPlatformBadge(platform: string) {
-  if (platform === 'dnshe') {
-    return <Badge className="bg-blue-500/15 text-blue-400 border-blue-500/20">DNSHE</Badge>;
-  }
-  return <Badge className="bg-purple-500/15 text-purple-400 border-purple-500/20">DNSNEKO</Badge>;
-}
-
-function getStatusBadge(status: 'active' | 'expired' | 'suspended') {
-  switch (status) {
-    case 'active':
-      return <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/20">活跃</Badge>;
-    case 'expired':
-      return <Badge className="bg-red-500/15 text-red-400 border-red-500/20">已过期</Badge>;
-    case 'suspended':
-      return <Badge className="bg-amber-500/15 text-amber-400 border-amber-500/20">已暂停</Badge>;
-  }
-}
-
-function getRecordStatusBadge(status: string | number) {
-  if (status === 'active' || status === 1) {
-    return <Badge className="bg-emerald-500/15 text-emerald-400 border-emerald-500/20">启用</Badge>;
-  }
-  return <Badge className="bg-slate-500/15 text-slate-400 border-slate-500/20">暂停</Badge>;
-}
-
-function getExpiryCountdown(expireTime?: string): string {
-  const days = getDaysRemaining(expireTime);
-  if (days === null) return '-';
-  if (days <= 0) return `已过期 ${Math.abs(days)} 天`;
-  if (days <= 30) return `${days} 天后到期`;
-  return `${days} 天`;
-}
-
-function getExpiryColor(expireTime?: string): string {
-  const days = getDaysRemaining(expireTime);
-  if (days === null) return 'text-muted-foreground';
-  if (days <= 0) return 'text-red-500 font-medium';
-  if (days <= 7) return 'text-red-400 font-medium';
-  if (days <= 30) return 'text-amber-400 font-medium';
-  return 'text-foreground';
-}
-
-export function DomainDetailPage() {
-  const { accountId, domainId } = useParams<{ accountId: string; domainId: string }>();
-  const navigate = useNavigate();
-
-  // Data
-  const { data: domain, isLoading: domainLoading, isError: domainIsError, error: domainError, refetch: refetchDomain } = useDomainDetail(accountId ?? '', domainId ?? '');
-  const { data: records, isLoading: recordsLoading, isError: recordsIsError, error: recordsError, refetch: refetchRecords } = useRecords(accountId ?? '', domainId ?? '');
-  const { data: accounts } = useAccounts();
-
-  const unifiedDomain = domain;
-  const unifiedRecords = records || [];
-
-  const accountsMap = useMemo(() => {
-    const map = new Map<string, string>();
-    accounts?.forEach((a) => map.set(a.id, a.name));
-    return map;
-  }, [accounts]);
-
-  const platform = unifiedDomain?.platform || 'dnshe';
-  const isDnsneko = platform === 'dnsneko';
-
-  // Mutations
-  const createRecord = useCreateRecord();
-  const updateRecord = useUpdateRecord();
-  const deleteRecord = useDeleteRecord();
-  const toggleStatus = useToggleRecordStatus();
-  const batchOp = useBatchOperation();
-
-  // Dialog states
-  const [addDialogOpen, setAddDialogOpen] = useState(false);
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [editingRecord, setEditingRecord] = useState<DnsRecord | null>(null);
-  const [deletingRecord, setDeletingRecord] = useState<DnsRecord | null>(null);
-
-  // Selection
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-
-  // Batch operation states
-  const [batchTtlValue, setBatchTtlValue] = useState(600);
-  const [batchLineValue, setBatchLineValue] = useState('default');
-
-  // Selection handlers
-  const toggleSelect = useCallback((id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
-
-  const toggleSelectAll = useCallback(() => {
-    if (selectedIds.size === unifiedRecords.length) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(unifiedRecords.map((r) => r.id)));
+  const create = useMutation({
+    mutationFn: () => api.post(`/api/records/${accountId}/${domainId}`, {
+      name: form.name,
+      type: form.type,
+      value: form.value,
+      line: form.line || null,
+      ttl: Number(form.ttl),
+      priority: form.priority ? Number(form.priority) : null,
+      remark: form.remark || null
+    }),
+    onSuccess: async () => {
+      setShowForm(false);
+      setForm({ name: '@', type: 'A', value: '', line: 'default', ttl: 600, priority: '', remark: '' });
+      await queryClient.invalidateQueries({ queryKey: ['domain-detail', accountId, domainId] });
     }
-  }, [selectedIds.size, unifiedRecords]);
+  });
+  const del = useMutation({
+    mutationFn: (recordId: string) => api.del(`/api/records/${accountId}/${domainId}/${recordId}`),
+    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ['domain-detail', accountId, domainId] })
+  });
 
-  const clearSelection = useCallback(() => {
-    setSelectedIds(new Set());
-  }, []);
-
-  // Record CRUD handlers
-  const handleAddRecord = useCallback(
-    async (data: RecordFormData) => {
-      if (!accountId || !domainId) return;
-      try {
-        await createRecord.mutateAsync({
-          accountId,
-          domainId,
-          name: data.name,
-          type: data.type,
-          value: data.value,
-          ttl: data.ttl,
-          priority: data.priority || undefined,
-          line: data.line || undefined,
-          remark: data.remark || undefined,
-        });
-        toast.success('记录添加成功');
-        setAddDialogOpen(false);
-      } catch {
-        toast.error('记录添加失败');
-      }
-    },
-    [accountId, domainId, createRecord]
-  );
-
-  const handleEditRecord = useCallback(
-    async (data: RecordFormData) => {
-      if (!editingRecord || !accountId || !domainId) return;
-      try {
-        await updateRecord.mutateAsync({
-          accountId,
-          domainId,
-          recordId: editingRecord.id,
-          name: data.name,
-          type: data.type,
-          value: data.value,
-          ttl: data.ttl,
-          priority: data.priority || undefined,
-          line: data.line || undefined,
-          remark: data.remark || undefined,
-        });
-        toast.success('记录更新成功');
-        setEditDialogOpen(false);
-        setEditingRecord(null);
-      } catch {
-        toast.error('记录更新失败');
-      }
-    },
-    [accountId, domainId, editingRecord, updateRecord]
-  );
-
-  const handleDeleteRecord = useCallback(async () => {
-    if (!deletingRecord || !accountId || !domainId) return;
-    try {
-      await deleteRecord.mutateAsync({
-        accountId,
-        domainId,
-        recordId: deletingRecord.id,
-      });
-      toast.success('记录删除成功');
-      setDeleteDialogOpen(false);
-      setDeletingRecord(null);
-    } catch {
-      toast.error('记录删除失败');
-    }
-  }, [accountId, domainId, deletingRecord, deleteRecord]);
-
-  const handleToggleStatus = useCallback(
-    async (record: DnsRecord) => {
-      if (!accountId || !domainId) return;
-      try {
-        const currentEnabled = record.status === 1 || record.status === 'active';
-        await toggleStatus.mutateAsync({
-          accountId,
-          domainId,
-          recordId: record.id,
-          enabled: !currentEnabled,
-        });
-        toast.success('状态切换成功');
-      } catch {
-        toast.error('状态切换失败');
-      }
-    },
-    [accountId, domainId, toggleStatus]
-  );
-
-  // Batch operations
-  const handleBatchEnable = useCallback(async () => {
-    if (!accountId || !domainId) return;
-    try {
-      await batchOp.mutateAsync({
-        accountId,
-        domainId,
-        operation: 'enable',
-        recordIds: Array.from(selectedIds),
-      });
-      toast.success('批量启用成功');
-      clearSelection();
-    } catch {
-      toast.error('批量启用失败');
-    }
-  }, [accountId, domainId, selectedIds, batchOp, clearSelection]);
-
-  const handleBatchDisable = useCallback(async () => {
-    if (!accountId || !domainId) return;
-    try {
-      await batchOp.mutateAsync({
-        accountId,
-        domainId,
-        operation: 'disable',
-        recordIds: Array.from(selectedIds),
-      });
-      toast.success('批量暂停成功');
-      clearSelection();
-    } catch {
-      toast.error('批量暂停失败');
-    }
-  }, [accountId, domainId, selectedIds, batchOp, clearSelection]);
-
-  const handleBatchDelete = useCallback(async () => {
-    if (!accountId || !domainId) return;
-    try {
-      await batchOp.mutateAsync({
-        accountId,
-        domainId,
-        operation: 'delete',
-        recordIds: Array.from(selectedIds),
-      });
-      toast.success('批量删除成功');
-      clearSelection();
-    } catch {
-      toast.error('批量删除失败');
-    }
-  }, [accountId, domainId, selectedIds, batchOp, clearSelection]);
-
-  if (!unifiedDomain && !domainLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center">
-          <p className="text-lg text-muted-foreground">域名不存在或加载失败</p>
-          <Button variant="outline" className="mt-4" onClick={() => navigate('/domains')}>
-            返回域名列表
-          </Button>
-        </div>
-      </div>
-    );
+  function submit(event: FormEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    create.mutate();
   }
 
-  if (domainLoading) {
-    return (
-      <div className="space-y-6">
-        {/* Back button skeleton */}
-        <div className="flex items-center gap-4">
-          <div className="size-9 animate-pulse rounded bg-slate-800" />
-          <div className="space-y-2">
-            <div className="h-7 w-48 animate-pulse rounded bg-slate-800" />
-            <div className="h-4 w-36 animate-pulse rounded bg-slate-800" />
-          </div>
-        </div>
-        {/* Domain Info Card skeleton */}
-        <Card className="bg-slate-800/50 border-slate-700/50">
-          <CardHeader>
-            <div className="h-6 w-64 animate-pulse rounded bg-slate-700" />
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i}>
-                  <div className="h-3 w-14 animate-pulse rounded bg-slate-700 mb-2" />
-                  <div className="h-4 w-20 animate-pulse rounded bg-slate-700" />
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-        {/* Records skeleton */}
-        <Card className="bg-slate-800/50 border-slate-700/50">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div className="h-6 w-32 animate-pulse rounded bg-slate-700" />
-              <div className="h-8 w-24 animate-pulse rounded bg-slate-700" />
-            </div>
-          </CardHeader>
-          <CardContent className="p-0">
-            <div className="animate-pulse space-y-3 p-4">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="h-8 bg-slate-700 rounded" />
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  if (domainIsError) {
-    return (
-      <div className="space-y-6">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => navigate('/domains')}>
-            <ArrowLeft className="size-5" />
-          </Button>
-        </div>
-        <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-          <AlertTriangle className="size-10 mb-3" />
-          <p className="text-lg">加载域名详情失败</p>
-          <p className="text-sm text-slate-500 mt-1">{domainError?.message || '未知错误'}</p>
-          <div className="flex gap-3 mt-4">
-            <Button variant="outline" onClick={() => refetchDomain()}>重试</Button>
-            <Button variant="ghost" onClick={() => navigate('/domains')}>返回域名列表</Button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const domainStatus = getDomainStatus(unifiedDomain);
-
+  const domain = query.data?.domain;
   return (
     <div className="space-y-6">
-      {/* Back button & title */}
-      <div className="flex items-center gap-4">
-        <Button variant="ghost" size="icon" onClick={() => navigate('/domains')}>
-          <ArrowLeft className="size-5" />
-        </Button>
-        <div>
-          <h1 className="text-2xl font-bold gradient-text">{unifiedDomain.domain}</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">域名详情与解析记录管理</p>
-        </div>
+      <Button variant="ghost" onClick={() => navigate('/domains')}><ArrowLeft className="mr-2 h-4 w-4" />返回域名列表</Button>
+      <div>
+        <h1 className="text-3xl font-semibold tracking-tight">{domain?.name ?? '域名详情'}</h1>
+        <p className="mt-2 text-slate-400">{domain ? `${domain.platform} / ${domain.accountName} / 到期 ${formatDate(domain.expiresAt)}` : '加载中...'}</p>
       </div>
-
-      {/* Domain Info Card */}
-      <Card className="bg-slate-800/50 border-slate-700/50">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-3">
-            <span className="text-lg">{unifiedDomain.domain}</span>
-            {getPlatformBadge(platform)}
-            {getStatusBadge(domainStatus)}
-          </CardTitle>
+      <Card>
+        <CardHeader className="flex-row items-center justify-between space-y-0">
+          <CardTitle>解析记录</CardTitle>
+          <Button variant="neon" size="sm" onClick={() => setShowForm((v) => !v)}><Plus className="mr-2 h-4 w-4" />添加记录</Button>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">API 账号</p>
-              <p className="text-sm font-medium">{accountsMap.get(unifiedDomain.accountId) || '-'}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">注册时间</p>
-              <p className="text-sm">{formatDate(unifiedDomain.createdAt)}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">到期时间</p>
-              <p className="text-sm">{formatDate(unifiedDomain.expireTime)}</p>
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground mb-1">到期倒计时</p>
-              <p className={`text-sm ${getExpiryColor(unifiedDomain.expireTime)}`}>
-                {getExpiryCountdown(unifiedDomain.expireTime)}
-              </p>
-            </div>
-            {unifiedDomain.rootDomain && (
-              <div>
-                <p className="text-xs text-muted-foreground mb-1">根域名</p>
-                <p className="text-sm">{unifiedDomain.rootDomain}</p>
-              </div>
-            )}
-            {unifiedDomain.userRemark && (
-              <div>
-                <p className="text-xs text-muted-foreground mb-1">备注</p>
-                <p className="text-sm">{unifiedDomain.userRemark}</p>
-              </div>
-            )}
-            {unifiedDomain.recordCount != null && (
-              <div>
-                <p className="text-xs text-muted-foreground mb-1">记录数</p>
-                <p className="text-sm">{unifiedDomain.recordCount}</p>
-              </div>
-            )}
-            {unifiedDomain.notice && (
-              <div className="col-span-2">
-                <p className="text-xs text-muted-foreground mb-1">通知</p>
-                <p className="text-sm">{unifiedDomain.notice}</p>
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* DNS Records Section */}
-      <Card className="bg-slate-800/50 border-slate-700/50">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle>DNS 解析记录</CardTitle>
-            <Button size="sm" onClick={() => setAddDialogOpen(true)}>
-              <Plus className="size-4" />
-              添加记录
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          {/* Batch Operations Toolbar */}
-          {selectedIds.size > 0 && (
-            <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-700/50 bg-slate-700/20">
-              <span className="text-sm text-muted-foreground">
-                已选择 {selectedIds.size} 条记录
-              </span>
-              {isDnsneko ? (
-                <>
-                  <Button size="sm" variant="outline" onClick={handleBatchEnable} disabled={batchOp.isPending}>
-                    批量启用
-                  </Button>
-                  <Button size="sm" variant="outline" onClick={handleBatchDisable} disabled={batchOp.isPending}>
-                    批量暂停
-                  </Button>
-                  <Button size="sm" variant="destructive" onClick={handleBatchDelete} disabled={batchOp.isPending}>
-                    批量删除
-                  </Button>
-                  <div className="flex items-center gap-2 ml-2">
-                    <Label className="text-xs text-muted-foreground whitespace-nowrap">批量改TTL:</Label>
-                    <Input
-                      type="number"
-                      min={1}
-                      value={batchTtlValue}
-                      onChange={(e) => setBatchTtlValue(Number(e.target.value))}
-                      className="w-20 h-7 text-xs"
-                    />
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={batchOp.isPending}
-                      onClick={async () => {
-                        if (!accountId || !domainId) return;
-                        try {
-                          await batchOp.mutateAsync({
-                            accountId,
-                            domainId,
-                            operation: 'ttl' as const,
-                            recordIds: Array.from(selectedIds),
-                            ttl: batchTtlValue,
-                          });
-                          toast.success('批量修改TTL成功');
-                          clearSelection();
-                        } catch {
-                          toast.error('批量修改TTL失败');
-                        }
-                      }}
-                    >
-                      应用
-                    </Button>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Label className="text-xs text-muted-foreground whitespace-nowrap">批量改线路:</Label>
-                    <Input
-                      value={batchLineValue}
-                      onChange={(e) => setBatchLineValue(e.target.value)}
-                      className="w-24 h-7 text-xs"
-                    />
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={batchOp.isPending}
-                      onClick={async () => {
-                        if (!accountId || !domainId) return;
-                        try {
-                          await batchOp.mutateAsync({
-                            accountId,
-                            domainId,
-                            operation: 'line' as const,
-                            recordIds: Array.from(selectedIds),
-                            line: batchLineValue,
-                          });
-                          toast.success('批量修改线路成功');
-                          clearSelection();
-                        } catch {
-                          toast.error('批量修改线路失败');
-                        }
-                      }}
-                    >
-                      应用
-                    </Button>
-                  </div>
-                </>
-              ) : (
-                <div className="flex items-center gap-2 text-amber-400">
-                  <Info className="size-4" />
-                  <span className="text-xs">DNSHE 不支持批量操作</span>
-                </div>
-              )}
-              <Button size="sm" variant="ghost" onClick={clearSelection} className="ml-auto">
-                取消选择
-              </Button>
-            </div>
-          )}
-
+          {showForm ? (
+            <form onSubmit={submit} className="mb-6 grid gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 md:grid-cols-6">
+              <div className="space-y-2"><Label>主机</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></div>
+              <div className="space-y-2"><Label>类型</Label><Select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>{recordTypes.map((type) => <option key={type}>{type}</option>)}</Select></div>
+              <div className="space-y-2 md:col-span-2"><Label>记录值</Label><Input value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} required /></div>
+              <div className="space-y-2"><Label>线路</Label><Input value={form.line} onChange={(e) => setForm({ ...form, line: e.target.value })} /></div>
+              <div className="space-y-2"><Label>TTL</Label><Input type="number" min={60} max={86400} value={form.ttl} onChange={(e) => setForm({ ...form, ttl: Number(e.target.value) })} /></div>
+              <div className="space-y-2"><Label>优先级</Label><Input value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} /></div>
+              <div className="space-y-2 md:col-span-3"><Label>备注</Label><Input value={form.remark} onChange={(e) => setForm({ ...form, remark: e.target.value })} /></div>
+              <div className="flex items-end md:col-span-2"><Button type="submit" disabled={create.isPending}>{create.isPending ? '提交中...' : '保存'}</Button></div>
+              {create.error ? <div className="text-sm text-red-300 md:col-span-6">{create.error.message}</div> : null}
+            </form>
+          ) : null}
           <Table>
-            <TableHeader>
-              <TableRow className="border-slate-700/50 hover:bg-transparent">
-                <TableHead className="w-10">
-                  <Checkbox
-                    checked={unifiedRecords.length > 0 && selectedIds.size === unifiedRecords.length}
-                    onCheckedChange={toggleSelectAll}
-                    aria-label="全选"
-                  />
-                </TableHead>
-                <TableHead>主机记录</TableHead>
-                <TableHead>类型</TableHead>
-                <TableHead>记录值</TableHead>
-                <TableHead>线路</TableHead>
-                <TableHead>TTL</TableHead>
-                <TableHead>优先级</TableHead>
-                <TableHead>状态</TableHead>
-                <TableHead>操作</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {recordsLoading ? (
-                Array.from({ length: 5 }).map((_, i) => (
-                  <TableRow key={i} className="border-slate-700/30">
-                    <TableCell><div className="h-4 w-4 animate-pulse rounded bg-slate-700" /></TableCell>
-                    <TableCell><div className="h-4 w-20 animate-pulse rounded bg-slate-700" /></TableCell>
-                    <TableCell><div className="h-5 w-14 animate-pulse rounded bg-slate-700" /></TableCell>
-                    <TableCell><div className="h-4 w-32 animate-pulse rounded bg-slate-700" /></TableCell>
-                    <TableCell><div className="h-4 w-16 animate-pulse rounded bg-slate-700" /></TableCell>
-                    <TableCell><div className="h-4 w-10 animate-pulse rounded bg-slate-700" /></TableCell>
-                    <TableCell><div className="h-4 w-8 animate-pulse rounded bg-slate-700" /></TableCell>
-                    <TableCell><div className="h-5 w-12 animate-pulse rounded bg-slate-700" /></TableCell>
-                    <TableCell><div className="h-4 w-16 animate-pulse rounded bg-slate-700" /></TableCell>
-                  </TableRow>
-                ))
-              ) : recordsIsError ? (
-                <TableRow>
-                  <TableCell colSpan={9} className="py-12 text-center">
-                    <div className="flex flex-col items-center justify-center text-slate-400">
-                      <AlertTriangle className="size-8 mb-2" />
-                      <p>加载失败: {recordsError?.message || '未知错误'}</p>
-                      <Button variant="outline" onClick={() => refetchRecords()} className="mt-3">重试</Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ) : unifiedRecords.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={9} className="py-12 text-center">
-                    <div className="flex flex-col items-center justify-center text-slate-500">
-                      <Inbox className="size-12 mb-3 text-slate-600" />
-                      <p className="text-lg font-medium">暂无解析记录</p>
-                      <p className="text-sm mt-1">点击上方按钮添加</p>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                unifiedRecords.map((record) => (
-                  <TableRow
-                    key={record.id}
-                    className={`border-slate-700/30 hover:bg-slate-700/30 ${
-                      selectedIds.has(record.id) ? 'bg-slate-700/20' : ''
-                    }`}
-                  >
-                    <TableCell>
-                      <Checkbox
-                        checked={selectedIds.has(record.id)}
-                        onCheckedChange={() => toggleSelect(record.id)}
-                        aria-label={`选择 ${record.name}`}
-                      />
-                    </TableCell>
-                    <TableCell className="font-medium max-w-[200px] truncate" title={record.name}>{record.name}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="font-mono text-xs">
-                        {record.type}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="max-w-[200px] truncate" title={record.value}>
-                      {record.value}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground max-w-[150px] truncate" title={record.line || 'default'}>{record.line || 'default'}</TableCell>
-                    <TableCell className="text-muted-foreground">{record.ttl}</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {record.priority != null ? record.priority : '-'}
-                    </TableCell>
-                    <TableCell>
-                      <button
-                        onClick={() => handleToggleStatus(record)}
-                        className="cursor-pointer"
-                        title="点击切换状态"
-                      >
-                        {getRecordStatusBadge(record.status)}
-                      </button>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon-xs"
-                          onClick={() => {
-                            setEditingRecord(record);
-                            setEditDialogOpen(true);
-                          }}
-                          title="编辑"
-                        >
-                          <Pencil className="size-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon-xs"
-                          onClick={() => {
-                            setDeletingRecord(record);
-                            setDeleteDialogOpen(true);
-                          }}
-                          title="删除"
-                          className="text-red-400 hover:text-red-300"
-                        >
-                          <Trash2 className="size-3.5" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
+            <THead><TR><TH>主机</TH><TH>类型</TH><TH>记录值</TH><TH>线路</TH><TH>TTL</TH><TH>状态</TH><TH>更新时间</TH><TH>操作</TH></TR></THead>
+            <TBody>
+              {(query.data?.records ?? []).map((record) => (
+                <TR key={record.id}>
+                  <TD className="font-medium">{record.name}</TD>
+                  <TD><Badge variant="secondary">{record.type}</Badge></TD>
+                  <TD className="max-w-md truncate">{record.value}</TD>
+                  <TD>{record.line ?? '-'}</TD>
+                  <TD>{record.ttl}</TD>
+                  <TD><Badge variant={record.status === 'active' ? 'success' : 'warning'}>{record.status === 'active' ? '启用' : '暂停'}</Badge></TD>
+                  <TD>{formatDate(record.updatedAt)}</TD>
+                  <TD><Button variant="ghost" size="sm" onClick={() => del.mutate(record.id)} disabled={del.isPending}><Trash2 className="h-4 w-4" /></Button></TD>
+                </TR>
+              ))}
+            </TBody>
           </Table>
         </CardContent>
       </Card>
-
-      {/* Dialogs */}
-      <AddRecordDialog
-        open={addDialogOpen}
-        onOpenChange={setAddDialogOpen}
-        onSubmit={handleAddRecord}
-        loading={createRecord.isPending}
-      />
-      <EditRecordDialog
-        open={editDialogOpen}
-        onOpenChange={setEditDialogOpen}
-        record={editingRecord}
-        onSubmit={handleEditRecord}
-        loading={updateRecord.isPending}
-      />
-      <DeleteRecordDialog
-        open={deleteDialogOpen}
-        onOpenChange={setDeleteDialogOpen}
-        record={deletingRecord}
-        onConfirm={handleDeleteRecord}
-        loading={deleteRecord.isPending}
-      />
     </div>
   );
 }

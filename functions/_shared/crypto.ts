@@ -1,80 +1,57 @@
-// AES-256-GCM encryption/decryption using Web Crypto API
-// Uses ENCRYPTION_KEY from environment variables
+const enc = new TextEncoder();
+const dec = new TextDecoder();
 
-function arrayBufferToBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
+function toBase64Url(bytes: Uint8Array): string {
   let binary = '';
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
+  bytes.forEach((byte) => (binary += String.fromCharCode(byte)));
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
 }
 
-function base64ToArrayBuffer(base64: string): ArrayBuffer {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes.buffer;
+function fromBase64Url(input: string): Uint8Array {
+  const normalized = input.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(input.length / 4) * 4, '=');
+  const binary = atob(normalized);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i);
+  return out;
 }
 
-async function deriveKey(keyMaterial: string): Promise<CryptoKey> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(keyMaterial);
-  const hash = await crypto.subtle.digest('SHA-256', data);
-  return crypto.subtle.importKey('raw', hash, { name: 'AES-GCM' }, false, [
-    'encrypt',
-    'decrypt',
-  ]);
-}
-
-export async function encrypt(plaintext: string, key: string): Promise<string> {
-  const cryptoKey = await deriveKey(key);
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const encoder = new TextEncoder();
-  const encoded = encoder.encode(plaintext);
-
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv },
-    cryptoKey,
-    encoded,
-  );
-
-  // Concatenate iv + ciphertext (which includes auth tag for AES-GCM)
-  const ivBytes = new Uint8Array(iv);
-  const cipherBytes = new Uint8Array(ciphertext);
-  const combined = new Uint8Array(ivBytes.length + cipherBytes.length);
-  combined.set(ivBytes, 0);
-  combined.set(cipherBytes, ivBytes.length);
-
-  return arrayBufferToBase64(combined.buffer);
-}
-
-export async function decrypt(ciphertext: string, key: string): Promise<string> {
+async function keyBytes(secret: string): Promise<Uint8Array> {
   try {
-    const cryptoKey = await deriveKey(key);
-    const combined = new Uint8Array(base64ToArrayBuffer(ciphertext));
-
-    // Extract IV (first 12 bytes) and ciphertext + auth tag (rest)
-    if (combined.length < 13) {
-      throw new Error('Invalid ciphertext: too short');
-    }
-    const iv = combined.slice(0, 12);
-    const cipherData = combined.slice(12);
-
-    const plaintext = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv },
-      cryptoKey,
-      cipherData,
-    );
-
-    const decoder = new TextDecoder();
-    return decoder.decode(plaintext);
-  } catch (error: unknown) {
-    if (error instanceof Error && error.message === 'Invalid ciphertext: too short') {
-      throw error;
-    }
-    throw new Error('Decryption failed: invalid key or corrupted data');
+    const decoded = fromBase64Url(secret);
+    if (decoded.byteLength === 32) return decoded;
+  } catch {
+    // fall back to digest
   }
+  return new Uint8Array(await crypto.subtle.digest('SHA-256', enc.encode(secret)));
+}
+
+function asArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
+}
+
+async function importAesKey(secret: string): Promise<CryptoKey> {
+  return crypto.subtle.importKey('raw', asArrayBuffer(await keyBytes(secret)), 'AES-GCM', false, ['encrypt', 'decrypt']);
+}
+
+export async function encryptJson(value: unknown, secret: string): Promise<string> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await importAesKey(secret);
+  const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv: asArrayBuffer(iv) }, key, enc.encode(JSON.stringify(value)));
+  return `v1:${toBase64Url(iv)}:${toBase64Url(new Uint8Array(cipher))}`;
+}
+
+export async function decryptJson<T>(payload: string, secret: string): Promise<T> {
+  const [version, ivPart, cipherPart] = payload.split(':');
+  if (version !== 'v1' || !ivPart || !cipherPart) throw new Error('Invalid encrypted payload');
+  const key = await importAesKey(secret);
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: asArrayBuffer(fromBase64Url(ivPart)) }, key, asArrayBuffer(fromBase64Url(cipherPart)));
+  return JSON.parse(dec.decode(plain)) as T;
+}
+
+export function maskSecret(value: string | undefined): string {
+  if (!value) return '未配置';
+  if (value.length <= 8) return `${value.slice(0, 2)}****${value.slice(-2)}`;
+  return `${value.slice(0, 4)}****${value.slice(-4)}`;
 }

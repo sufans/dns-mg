@@ -1,139 +1,113 @@
-# DNS Manager
+# Cloudflare DNS Manager
 
-统一管理 DNSHE / DNSNEKO 多平台域名解析的轻量级控制面板，基于 Cloudflare Pages + D1 部署，零服务器成本。
+生产级、单管理员、零外部后端服务的多域名解析平台统一管理系统。项目面向 Cloudflare Pages + Pages Functions + D1 SQLite 设计，集中管理 DNSHE 与 DNSNEKO 的域名和 DNS 记录。
 
-## 架构
+## 技术栈
 
-```
-┌─────────────────────────────────────────────────────┐
-│                   Cloudflare Pages                   │
-│                                                      │
-│  ┌──────────────┐    ┌──────────────────────────┐   │
-│  │   前端 SPA    │    │   Pages Functions (API)   │   │
-│  │  React + RQ  │◄──►│  认证 / 代理 / 日志 / 备份  │   │
-│  └──────────────┘    └────────┬─────────────────┘   │
-│                               │                      │
-│              ┌────────────────┼────────────────┐     │
-│              ▼                ▼                ▼     │
-│        ┌──────────┐   ┌────────────┐   ┌─────────┐  │
-│        │  D1 (DB)  │   │ DNSHE API  │   │DNSNEKO  │  │
-│        │ 账号/日志  │   │  适配器     │   │ 适配器   │  │
-│        └──────────┘   └────────────┘   └─────────┘  │
-│                                                      │
-│  Cron Trigger ──► scheduled.ts ──► 到期检测 + 邮件    │
-└─────────────────────────────────────────────────────┘
-```
+- 前端：React 18、TypeScript 5、Tailwind CSS v3、shadcn/ui 风格组件、Lucide 图标
+- 状态：TanStack React Query v5
+- 校验：Zod
+- 后端：Cloudflare Pages Functions
+- 存储：Cloudflare D1 SQLite
+- 加密：Web Crypto AES-GCM
+- 认证：bcrypt + JWT + HttpOnly Cookie + CSRF Token
+- 构建：Vite
 
-- **前端**：React 18 + TypeScript + Tailwind CSS + shadcn/ui，TanStack React Query 管理状态
-- **后端**：Cloudflare Pages Functions，文件路由自动映射为 API 端点
-- **数据库**：Cloudflare D1 (SQLite)，存储账号、分组、日志、设置
-- **适配器模式**：DNSHE / DNSNEKO 各实现 `DNSPlatformAdapter` 接口，统一数据模型，业务层无需关心平台差异
-- **安全**：JWT 认证 + bcrypt 密码哈希 + AES-256-GCM 凭据加密 + 登录限流
+## 核心特性
 
-## 快速部署
+- 纯个人自用单管理员系统，无注册、无多用户、无权限分级。
+- 管理员凭证 100% 来自 Cloudflare 环境变量，不写入数据库或代码。
+- API 账号密钥使用 `ENCRYPTION_KEY` 加密存储在 D1。
+- DNSHE / DNSNEKO 平台适配器独立封装。
+- 域名跨平台聚合、筛选、搜索、到期预警、CSV 导出。
+- DNS 记录增删改查；DNSNEKO 支持官方批量操作。
+- 操作日志、设置、备份恢复、邮件到期提醒端点。
+- Cloudflare 原生安全头、CSP、CSRF、登录失败锁定。
 
-### 1. 创建 D1 数据库
+## 目录结构
 
-```bash
-wrangler d1 create dns-manager-db
-```
-
-将输出的 `database_id` 填入 `wrangler.toml`：
-
-```toml
-database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-```
-
-### 2. 初始化表结构
-
-```bash
-wrangler d1 execute dns-manager-db --remote --file=migrations/0001_init.sql
+```text
+cloudflare-dns-manager/
+├─ public/                  # 静态资源与 _routes.json
+├─ src/                     # React 前端
+│  ├─ components/           # shadcn/ui 风格组件与布局
+│  ├─ hooks/                # React Hooks
+│  ├─ lib/                  # API、路由、QueryClient、工具函数
+│  ├─ pages/                # 页面
+│  ├─ plugins/dns-platforms # 平台扩展模板
+│  └─ types/                # 前端类型
+├─ functions/               # Cloudflare Pages Functions API
+│  ├─ _shared/              # 认证、加密、日志、适配器、响应工具
+│  └─ api/                  # REST API 路由
+├─ d1/                      # D1 schema / migration
+├─ docs/                    # 部署、API、安全、排障文档
+├─ scripts/                 # 密码哈希与随机密钥生成
+└─ wrangler.toml            # 本地与绑定配置模板
 ```
 
-### 3. 设置密钥
-
-```bash
-# 生成密码哈希
-node -e "const bcrypt = require('bcryptjs'); console.log(bcrypt.hashSync('你的密码', 10));"
-
-# 生成随机密钥（运行两次，分别用于 JWT_SECRET 和 ENCRYPTION_KEY）
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'));"
-```
-
-在 Cloudflare Dashboard → Pages → 项目 → Settings → Environment variables 中设置：
-
-| 变量 | 说明 |
-|------|------|
-| `ADMIN_USERNAME` | 管理员用户名 |
-| `ADMIN_PASSWORD_HASH` | 上一步生成的 bcrypt 哈希 |
-| `JWT_SECRET` | 64字符十六进制字符串 |
-| `ENCRYPTION_KEY` | 64字符十六进制字符串 |
-| `SEND_EMAIL_DOMAIN` | 邮件发送域名（可选，用于到期提醒） |
-
-> 也可直接编辑 `wrangler.toml` 的 `[vars]` 段，但敏感值建议用 Dashboard 设置。
-
-### 4. 部署
-
-**Git 集成（推荐）：** Dashboard → Workers & Pages → Create → Pages → Connect to Git
-
-- Build command: `npm run build`
-- Build output: `dist`
-
-**CLI 部署：**
-
-```bash
-npm run build
-wrangler pages deploy dist --project-name dns-mg
-```
-
-### 5. 配置 Cron（可选）
-
-Dashboard → 项目 → Settings → Triggers → 添加 Cron：`0 8 * * *`（每天 UTC 8:00 检测到期域名）
-
-### 本地开发
+## 快速开始
 
 ```bash
 npm install
-wrangler pages dev -- npm run dev
+npm run secret:password -- "your-strong-password"
+npm run secret:key
+npx wrangler d1 create dns_manager
+npx wrangler d1 execute dns_manager --remote --file=d1/schema.sql
+npm run build
 ```
 
-访问 `http://localhost:8788`
+Cloudflare Pages 配置：
 
-## 项目结构
+- Build command: `npm run build`
+- Build output directory: `dist`
+- D1 binding: `DB`
 
+完整部署步骤见 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)。
+
+## 环境变量
+
+参见 `.env.example`。生产环境必须配置：
+
+- `ADMIN_USERNAME`
+- `ADMIN_PASSWORD_HASH`
+- `JWT_SECRET`
+- `ENCRYPTION_KEY`
+
+建议配置：
+
+- `APP_ORIGIN`
+- `AUTOMATION_SECRET`
+- `LOG_RETENTION_DAYS`
+- `EMAIL_FROM`
+- `EMAIL_TO`
+- `SEND_EMAIL` binding
+
+## DNSHE / DNSNEKO 对接说明
+
+- DNSHE 使用 `X-API-Key` 与 `X-API-Secret` Header，对应 `subdomains` 与 `dns_records` 模块。
+- DNSNEKO 使用 `X-DNSNEKO-USERNAME` 与 `X-DNSNEKO-API-KEY` Header，对应 `/domains` 与 `/records` REST API。
+- 本项目所有平台 API 调用都发生在 Pages Functions 端，浏览器不会接触上游 API 密钥。
+
+## 开发命令
+
+```bash
+npm run dev              # 仅前端 Vite
+npm run pages:dev        # 构建后以 Wrangler Pages Functions 本地运行
+npm run typecheck
+npm run lint
+npm run format
+npm run d1:init:local
+npm run d1:init:remote
 ```
-functions/              # 后端 API（Pages Functions 自动路由）
-  _shared/              #   共享模块（_前缀不生成路由）
-    adapters/           #     DNS 平台适配器
-    auth.ts             #     JWT + bcrypt + 限流
-    crypto.ts           #     AES-256-GCM 加解密
-    email.ts            #     MailChannels 发信
-  api/                  #   REST 端点（文件路径 = URL 路径）
-    auth/               #     登录 / 刷新 / 验证密码
-    accounts/           #     账号 CRUD + 测试 + 导入导出
-    groups/             #     分组 CRUD
-    domains/            #     域名列表 / 详情
-    records/            #     记录 CRUD + 批量操作
-    logs/               #     操作日志
-    settings/           #     系统设置
-    backup/             #     备份 / 恢复
-  scheduled.ts          #   Cron 定时任务
-src/                    # 前端
-  components/           #   UI 组件
-  hooks/                #   React Query hooks
-  pages/                #   页面
-  plugins/              #   DNS 适配器（前端副本）
-  lib/api.ts            #   API 客户端
-migrations/             # D1 迁移脚本
-wrangler.toml           # Cloudflare 配置
-```
 
-## 鸣谢
+## 生产注意事项
 
-- [**DNSHE**](https://www.dnshe.com/) — DNS 解析服务及 API
-- [**DNSNEKO**](https://www.dnsneko.com/) — DNS 解析服务及 API
-- [**Trae**](https://www.trae.ai/) — 本项目全程使用 Trae 开发
+1. 不要把 `.dev.vars`、`.env`、明文密码或 API 密钥提交到 Git。
+2. `ADMIN_PASSWORD_HASH` 必须是 bcrypt 哈希，不能是明文。
+3. `APP_ORIGIN` 建议设置为生产域名，例如 `https://dns.example.com`。
+4. 如果开启邮件提醒，需要配置 Cloudflare Email Routing 与 `SEND_EMAIL` binding。
+5. 定时任务建议使用 Cloudflare Workers Cron 调用 `/api/automation/check-expiry`。
 
-## 许可证
+## 许可
 
-MIT
+MIT，仅供个人自用部署和二次开发。

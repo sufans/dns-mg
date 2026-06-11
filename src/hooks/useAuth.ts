@@ -1,74 +1,18 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
-import { api } from '@/lib/api';
-import { queryClient } from '@/lib/queryClient';
-import type { LoginInput, VerifyPasswordInput } from '@/types';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '../lib/api';
 
-interface AuthResponse {
-  token: string;
+export interface AuthMe {
+  username: string;
+  csrf: string;
+  exp: number;
 }
 
-interface LoginErrorData {
-  message: string;
-  remainingAttempts?: number;
-  unlockAt?: string;
-}
-
-function isTokenValid(token: string): boolean {
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    return payload.exp * 1000 > Date.now();
-  } catch {
-    return false;
-  }
-}
-
-export function useLogin() {
-  const navigate = useNavigate();
-
-  return useMutation<AuthResponse, Error, LoginInput>({
-    mutationFn: async (data: LoginInput) => {
-      return api.post<AuthResponse>('/auth/login', data);
-    },
-    onSuccess: (data) => {
-      localStorage.setItem('dns-manager-token', data.token);
-      queryClient.invalidateQueries({ queryKey: ['auth'] });
-      navigate('/dashboard', { replace: true });
-    },
+export function useAuth(): { data: AuthMe | undefined; isLoading: boolean; isAuthenticated: boolean } {
+  const query = useQuery({
+    queryKey: ['auth', 'me'],
+    queryFn: () => api.get<AuthMe>('/api/auth/me'),
+    retry: false,
+    staleTime: 30_000
   });
+  return { data: query.data, isLoading: query.isLoading, isAuthenticated: Boolean(query.data) };
 }
-
-export function useLogout() {
-  const navigate = useNavigate();
-
-  return useMutation({
-    mutationFn: async () => {
-      api.removeToken();
-      queryClient.clear();
-    },
-    onSuccess: () => {
-      navigate('/login', { replace: true });
-    },
-  });
-}
-
-export function useVerifyPassword() {
-  return useMutation({
-    mutationFn: (data: VerifyPasswordInput) => api.post<{ valid: boolean }>('/auth/verify-password', data),
-  });
-}
-
-export function useIsAuthenticated() {
-  return useQuery({
-    queryKey: ['auth', 'isAuthenticated'],
-    queryFn: () => {
-      const token = localStorage.getItem('dns-manager-token');
-      if (!token) return false;
-      return isTokenValid(token);
-    },
-    staleTime: 60 * 1000, // Re-check every minute
-    refetchOnWindowFocus: true,
-  });
-}
-
-export type { LoginErrorData };
