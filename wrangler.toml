@@ -1,18 +1,14 @@
-name = "dns-mg"
-compatibility_date = "2024-12-01"
-compatibility_flags = ["nodejs_compat"]
+name = "cloudflare-dns-manager"
+compatibility_date = "2026-06-10"
+pages_build_output_dir = "./dist"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "dns-manager-db"
-database_id = "c4a08954-33d1-4282-a7c2-10a6a8f97752"
+database_name = "dns_manager"
+database_id = "replace-with-your-d1-database-id"
 
-[vars]
-ADMIN_USERNAME = "admin"
-ADMIN_PASSWORD_HASH = ""
-JWT_SECRET = ""
-ENCRYPTION_KEY = ""
-SEND_EMAIL_DOMAIN = ""
-
-[triggers]
-crons = ["0 8 * * *"]  # Run daily at 8:00 AM UTC
+# Optional Cloudflare Email Routing send_email binding for expiry reminders.
+# Enable Email Routing first, then uncomment and set destination_address if you want restriction.
+# [[send_email]]
+# name = "SEND_EMAIL"
+# destination_address = "you@your-domain.example"
