@@ -1,0 +1,2 @@
+-- Reserved for future migrations. Apply with:
+-- wrangler d1 execute dns_manager --remote --file=d1/migrate.sql
