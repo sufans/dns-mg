@@ -1,5 +1,6 @@
 import { createDnsheAdapter } from './dnshe';
 import { createDnsNekoAdapter } from './dnsneko';
+import { createGleamAdapter } from './gleam';
 import type { ApiAccountRow, DNSPlatformAdapter } from '../types';
 
 export function adapterForAccount(row: ApiAccountRow): DNSPlatformAdapter {
@@ -12,5 +13,6 @@ export function adapterForAccount(row: ApiAccountRow): DNSPlatformAdapter {
   };
   if (row.platform === 'dnshe') return createDnsheAdapter(meta);
   if (row.platform === 'dnsneko') return createDnsNekoAdapter(meta);
+  if (row.platform === 'gleam') return createGleamAdapter(meta);
   throw new Error(`Unsupported platform: ${row.platform}`);
 }

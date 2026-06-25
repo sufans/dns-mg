@@ -1,0 +1,25 @@
+# Gleam 平台支持 Checklist
+
+- [x] `DNSPlatform` 类型（后端 `functions/_shared/types.ts`）包含 `'gleam'`
+- [x] `DNSPlatform` 类型（前端 `src/types/models.ts`）包含 `'gleam'`
+- [x] `dnsPlatformSchema` 校验器包含 `'gleam'`
+- [x] `accountCredentialSchema` 包含 Gleam 凭据校验（apiKey + apiSecret）
+- [x] `functions/_shared/platforms/gleam.ts` 文件存在且导出 `createGleamAdapter`
+- [x] HMAC-SHA256 签名生成函数正确实现：`timestamp + method + path + body`
+- [x] 请求头自动添加 `X-Api-Key`、`X-Timestamp`、`X-Signature`
+- [x] `listDomains` 实现正确调用 GET `/api/open/subdomains` 并映射 `UnifiedDomain[]`
+- [x] `getDomain` 实现正确调用 GET `/api/open/subdomains/{id}` 并映射 `UnifiedDomain`
+- [x] `listRecords` 实现正确调用 GET `/api/open/subdomains/{id}/records` 并映射 `UnifiedRecord[]`
+- [x] `createRecord` 实现正确调用 POST `/api/open/subdomains/{id}/records`
+- [x] `updateRecord` 实现正确调用 PUT `/api/open/dns-records/{id}`
+- [x] `deleteRecord` 实现正确调用 DELETE `/api/open/dns-records/{id}`
+- [x] 限流配置合理（`accountWindowLimit` 和 `windowSeconds`）
+- [x] `factory.ts` 导入并注册 Gleam 适配器
+- [x] `db.ts` 的 `toPublicAccount` 支持 Gleam 凭据脱敏展示
+- [x] `accounts/index.ts` 的 `normalizeConfig` 支持 Gleam 凭据格式
+- [x] 前端平台下拉框包含 "GLEAM" 选项
+- [x] 选择 Gleam 时显示 API Key（明文）和 API Secret（密码类型）输入框
+- [x] 表单提交时 Gleam 凭据以 `{ apiKey, apiSecret }` 格式发送
+- [x] 单元测试覆盖所有适配器方法（签名生成、请求格式、错误处理）
+- [x] `npx tsc --noEmit` 通过（无类型错误）
+- [x] `npm run build` 通过（构建成功）

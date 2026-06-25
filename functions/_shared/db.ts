@@ -2,7 +2,7 @@ import { decryptJson, maskSecret } from './crypto';
 import type { ApiAccountConfig, ApiAccountRow, Env, PublicApiAccount } from './types';
 
 export function toPublicAccount(row: ApiAccountRow, config?: ApiAccountConfig): PublicApiAccount {
-  const maskedCredential = row.platform === 'dnshe' ? maskSecret(config?.apiKey) : `${config?.username ?? 'unknown'} / ${maskSecret(config?.apiKey)}`;
+  const maskedCredential = row.platform === 'dnsneko' ? `${config?.username ?? 'unknown'} / ${maskSecret(config?.apiKey)}` : maskSecret(config?.apiKey);
   return {
     id: row.id,
     platform: row.platform,

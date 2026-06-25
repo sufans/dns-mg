@@ -9,8 +9,8 @@ import { reservePlatformRequest } from '../../_shared/rate-limit';
 import type { ApiAccountConfig, ApiAccountRow, Env } from '../../_shared/types';
 
 function normalizeConfig(platform: string, credentials: Record<string, string>): ApiAccountConfig {
-  if (platform === 'dnshe') return { apiKey: credentials.apiKey, apiSecret: credentials.apiSecret };
-  return { username: credentials.username, apiKey: credentials.apiKey };
+  if (platform === 'dnsneko') return { username: credentials.username, apiKey: credentials.apiKey };
+  return { apiKey: credentials.apiKey, apiSecret: credentials.apiSecret };
 }
 
 async function updateCheckStatus(env: Env, row: ApiAccountRow, config: ApiAccountConfig): Promise<void> {

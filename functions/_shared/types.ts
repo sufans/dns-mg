@@ -1,4 +1,4 @@
-export type DNSPlatform = 'dnshe' | 'dnsneko';
+export type DNSPlatform = 'dnshe' | 'dnsneko' | 'gleam';
 
 export interface Env {
   DB: D1Database;
