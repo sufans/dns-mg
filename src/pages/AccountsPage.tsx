@@ -71,7 +71,7 @@ export function AccountsPage(): JSX.Element {
               {form.platform === 'dnsneko' ? <div className="space-y-2"><Label>DNSNEKO Username</Label><Input value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} required /></div> : null}
               {form.platform !== 'gleam' ? <div className="space-y-2"><Label>API Key</Label><Input value={form.apiKey} onChange={(e) => setForm({ ...form, apiKey: e.target.value })} required /></div> : null}
               {form.platform === 'dnshe' ? <div className="space-y-2"><Label>API Secret</Label><Input type="password" value={form.apiSecret} onChange={(e) => setForm({ ...form, apiSecret: e.target.value })} required /></div> : null}
-              {form.platform === 'gleam' ? <div className="space-y-2"><Label>GLEAM API Key</Label><Input value={form.apiKey} onChange={(e) => setForm({ ...form, apiKey: e.target.value })} required placeholder="hl6_xxxxxxxxxxxx" /></div> : null}
+              {form.platform === 'gleam' ? <div className="space-y-2"><Label>GLEAM API Key</Label><Input type="password" value={form.apiKey} onChange={(e) => setForm({ ...form, apiKey: e.target.value })} required placeholder="hl6_xxxxxxxxxxxx" /></div> : null}
               {create.error ? <div className="text-sm text-red-300 md:col-span-2">{create.error.message}</div> : null}
               <div className="md:col-span-2"><Button type="submit" variant="neon">保存并检测</Button></div>
             </form>
