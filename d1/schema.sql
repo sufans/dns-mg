@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS api_groups (
 
 CREATE TABLE IF NOT EXISTS api_accounts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  platform TEXT NOT NULL CHECK (platform IN ('dnshe', 'dnsneko')),
+  platform TEXT NOT NULL,
   name TEXT NOT NULL,
   group_id INTEGER REFERENCES api_groups(id) ON DELETE SET NULL,
   encrypted_config_json TEXT NOT NULL,
