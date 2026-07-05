@@ -10,6 +10,7 @@ import type { ApiAccountConfig, ApiAccountRow, Env } from '../../_shared/types';
 
 function normalizeConfig(platform: string, credentials: Record<string, string>): ApiAccountConfig {
   if (platform === 'dnsneko') return { username: credentials.username, apiKey: credentials.apiKey };
+  if (platform === 'gleam') return { apiKey: credentials.apiKey };
   return { apiKey: credentials.apiKey, apiSecret: credentials.apiSecret };
 }
 

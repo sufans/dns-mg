@@ -22,7 +22,7 @@ vi.mock('../../fetcher', () => {
   };
 });
 
-import { createGleamAdapter, generateSignature } from '../gleam';
+import { createGleamAdapter } from '../gleam';
 import { fetchJsonWithRetry } from '../../fetcher';
 import type { AdapterCredentials, DnsRecordInput } from '../../types';
 
@@ -31,7 +31,7 @@ import type { AdapterCredentials, DnsRecordInput } from '../../types';
 // ---------------------------------------------------------------------------
 const credentials: AdapterCredentials = {
   platform: 'gleam',
-  config: { apiKey: 'test-api-key', apiSecret: 'test-api-secret' },
+  config: { apiKey: 'hl6_testkey123456789' },
 };
 
 const accountMeta = {
@@ -45,83 +45,20 @@ const accountMeta = {
 const mockFetch = vi.mocked(fetchJsonWithRetry);
 
 // ---------------------------------------------------------------------------
-// Mock crypto.subtle
+// Setup
 // ---------------------------------------------------------------------------
-const mockImportKey = vi.fn().mockResolvedValue({});
-const mockSign = vi.fn().mockResolvedValue(new Uint8Array([0xAB, 0xCD]).buffer);
-
 beforeEach(() => {
   vi.clearAllMocks();
-
-  // Deterministic timestamp
-  vi.spyOn(Date, 'now').mockReturnValue(1700000000000);
-
-  // Mock crypto.subtle using vi.stubGlobal to handle getter-only property
+  // Mock crypto.randomUUID for idempotency key
   vi.stubGlobal('crypto', {
-    subtle: {
-      importKey: mockImportKey,
-      sign: mockSign,
-    },
+    randomUUID: vi.fn().mockReturnValue('mock-uuid-1234'),
     getRandomValues: vi.fn(),
-    randomUUID: vi.fn(),
   });
 });
 
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
-
-describe('generateSignature', () => {
-  it('produces correct HMAC-SHA256 hex signature', async () => {
-    const timestamp = '1700000000';
-    const method = 'GET';
-    const path = '/api/open/subdomains';
-    const body = '';
-    const apiSecret = 'test-api-secret';
-
-    const signature = await generateSignature(timestamp, method, path, body, apiSecret);
-
-    // Verify that importKey was called with correct parameters
-    expect(mockImportKey).toHaveBeenCalledTimes(1);
-    expect(mockImportKey).toHaveBeenCalledWith(
-      'raw',
-      expect.any(Uint8Array),
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['sign'],
-    );
-
-    // Verify key data is the encoded apiSecret
-    const keyDataArg = mockImportKey.mock.calls[0][1] as Uint8Array;
-    expect(new TextDecoder().decode(keyDataArg)).toBe(apiSecret);
-
-    // Verify sign was called with correct parameters
-    expect(mockSign).toHaveBeenCalledTimes(1);
-    expect(mockSign).toHaveBeenCalledWith('HMAC', expect.any(Object), expect.any(Uint8Array));
-
-    // Verify message data
-    const messageArg = mockSign.mock.calls[0][2] as Uint8Array;
-    const expectedMessage = timestamp + method + path + body;
-    expect(new TextDecoder().decode(messageArg)).toBe(expectedMessage);
-
-    // Verify hex output (0xAB, 0xCD → "abcd")
-    expect(signature).toBe('abcd');
-  });
-
-  it('includes body in the signature message for POST requests', async () => {
-    const timestamp = '1700000000';
-    const method = 'POST';
-    const path = '/api/open/subdomains/123/records';
-    const body = '{"name":"www"}';
-    const apiSecret = 'test-api-secret';
-
-    await generateSignature(timestamp, method, path, body, apiSecret);
-
-    const messageArg = mockSign.mock.calls[0][2] as Uint8Array;
-    const expectedMessage = timestamp + method + path + body;
-    expect(new TextDecoder().decode(messageArg)).toBe(expectedMessage);
-  });
-});
 
 describe('createGleamAdapter', () => {
   const adapter = createGleamAdapter(accountMeta);
@@ -140,59 +77,59 @@ describe('createGleamAdapter', () => {
   });
 
   describe('listDomains', () => {
-    it('sends correct GET request to subdomains endpoint', async () => {
-      mockFetch.mockResolvedValueOnce({ code: 0, data: [] });
+    it('sends correct GET request with X-API-Key header', async () => {
+      mockFetch.mockResolvedValueOnce({ code: 0, message: 'ok', data: [] });
 
       await adapter.listDomains(credentials);
 
       expect(mockFetch).toHaveBeenCalledTimes(1);
       const [url, init] = mockFetch.mock.calls[0];
-      expect(url).toContain('https://api.gleam.com/api/open/subdomains?page=1&size=100');
+      expect(url).toBe('https://sld.0n.pub/api/v1/open/subdomains');
       expect(init?.method).toBe('GET');
 
       const headers = init?.headers as Record<string, string>;
-      expect(headers['X-Api-Key']).toBe('test-api-key');
-      expect(headers['X-Timestamp']).toBe('1700000000');
-      expect(headers['X-Signature']).toBe('abcd');
+      expect(headers['X-API-Key']).toBe('hl6_testkey123456789');
+      expect(headers['X-Idempotency-Key']).toBeUndefined();
       expect(headers['Content-Type']).toBeUndefined();
     });
 
-    it('includes pagination and filter params', async () => {
-      mockFetch.mockResolvedValueOnce({ code: 0, data: [] });
+    it('includes pagination params', async () => {
+      mockFetch.mockResolvedValueOnce({ code: 0, message: 'ok', data: [] });
 
-      await adapter.listDomains(credentials, {
-        page: 3,
-        size: 50,
-        search: 'example',
-        status: 'active',
-      });
+      await adapter.listDomains(credentials, { page: 3, size: 50 });
 
       const [url] = mockFetch.mock.calls[0];
       expect(url).toContain('page=3');
       expect(url).toContain('size=50');
-      expect(url).toContain('search=example');
-      expect(url).toContain('status=active');
     });
 
     it('maps GleamSubdomain[] to UnifiedDomain[]', async () => {
       mockFetch.mockResolvedValueOnce({
         code: 0,
+        message: 'ok',
         data: [
           {
             id: 101,
-            full_domain: 'example.com',
+            domain_id: 1,
+            user_id: 7,
+            name: 'myhost',
+            fqdn: 'myhost.example.com',
+            claim_cost: 10,
             status: 'active',
-            created_at: '2024-01-01',
-            expires_at: '2025-01-01',
-            remaining_days: 180,
-            record_count: 5,
+            dns_records: [{ id: 1 }, { id: 2 }],
+            created_at: '2026-01-01T00:00:00Z',
+            updated_at: '2026-01-01T00:00:00Z',
           },
           {
             id: 102,
-            subdomain: 'test.org',
-            status: 'expired',
-            remaining_days: -5,
-            record_count: 0,
+            domain_id: 1,
+            user_id: 7,
+            name: 'test',
+            fqdn: 'test.example.com',
+            claim_cost: 10,
+            status: 'suspended',
+            created_at: '2026-02-01T00:00:00Z',
+            updated_at: '2026-02-01T00:00:00Z',
           },
         ],
       });
@@ -202,51 +139,30 @@ describe('createGleamAdapter', () => {
       expect(result).toHaveLength(2);
       expect(result[0]).toMatchObject({
         id: '101',
-        name: 'example.com',
+        name: 'myhost.example.com',
         platform: 'gleam',
         accountId: 1,
         accountName: 'test-account',
         status: 'active',
         dnsStatus: '正常',
-        recordCount: 5,
+        recordCount: 2,
         expired: false,
+        renewStatus: '正常',
       });
       expect(result[1]).toMatchObject({
         id: '102',
-        name: 'test.org',
-        status: 'expired',
-        expired: true,
-        remainingDays: -5,
-        renewStatus: '已过期',
+        name: 'test.example.com',
+        status: 'suspended',
+        dnsStatus: 'suspended',
+        recordCount: null,
       });
     });
 
     it('handles empty data array', async () => {
-      mockFetch.mockResolvedValueOnce({ code: 0, data: undefined });
+      mockFetch.mockResolvedValueOnce({ code: 0, message: 'ok', data: [] });
 
       const result = await adapter.listDomains(credentials);
       expect(result).toEqual([]);
-    });
-
-    it('handles remaining_days from expires_at', async () => {
-      // Mock Date.now to 2024-06-15
-      vi.spyOn(Date, 'now').mockReturnValue(new Date('2024-06-15').getTime());
-
-      mockFetch.mockResolvedValueOnce({
-        code: 0,
-        data: [
-          {
-            id: 1,
-            full_domain: 'example.com',
-            expires_at: '2024-07-15',
-            // no remaining_days provided
-          },
-        ],
-      });
-
-      const result = await adapter.listDomains(credentials);
-      // 30 days between 2024-06-15 and 2024-07-15
-      expect(result[0].remainingDays).toBe(30);
     });
   });
 
@@ -254,111 +170,103 @@ describe('createGleamAdapter', () => {
     it('fetches single domain detail', async () => {
       mockFetch.mockResolvedValueOnce({
         code: 0,
+        message: 'ok',
         data: {
           id: 42,
-          full_domain: 'single.example.com',
+          domain_id: 1,
+          user_id: 7,
+          name: 'myhost',
+          fqdn: 'myhost.example.com',
+          claim_cost: 10,
           status: 'active',
-          record_count: 3,
+          dns_records: [],
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
         },
       });
 
       const result = await adapter.getDomain(credentials, '42');
 
       const [url] = mockFetch.mock.calls[0];
-      expect(url).toBe('https://api.gleam.com/api/open/subdomains/42');
+      expect(url).toBe('https://sld.0n.pub/api/v1/open/subdomains/42');
       expect(result.id).toBe('42');
-      expect(result.name).toBe('single.example.com');
+      expect(result.name).toBe('myhost.example.com');
     });
 
     it('throws UpstreamError when data is null', async () => {
-      mockFetch.mockResolvedValueOnce({ code: 0, data: null });
+      mockFetch.mockResolvedValueOnce({ code: 0, message: 'ok', data: null });
 
       await expect(adapter.getDomain(credentials, '42')).rejects.toThrow('Gleam 子域名不存在');
     });
   });
 
   describe('listRecords', () => {
-    it('sends correct GET request to records endpoint', async () => {
-      mockFetch.mockResolvedValueOnce({ code: 0, data: [] });
+    it('sends correct GET request to dns-records endpoint', async () => {
+      mockFetch.mockResolvedValueOnce({ code: 0, message: 'ok', data: [] });
 
-      await adapter.listRecords(credentials, 'domain-123');
+      await adapter.listRecords(credentials, '42');
 
       const [url, init] = mockFetch.mock.calls[0];
-      expect(url).toContain('https://api.gleam.com/api/open/subdomains/domain-123/records?page=1&size=100');
+      expect(url).toBe('https://sld.0n.pub/api/v1/open/dns-records/42');
       expect(init?.method).toBe('GET');
 
       const headers = init?.headers as Record<string, string>;
-      expect(headers['X-Api-Key']).toBe('test-api-key');
-      expect(headers['X-Signature']).toBe('abcd');
-    });
-
-    it('includes optional filter params', async () => {
-      mockFetch.mockResolvedValueOnce({ code: 0, data: [] });
-
-      await adapter.listRecords(credentials, 'domain-123', {
-        type: 'A',
-        line: 'default',
-        keyword: 'www',
-      });
-
-      const [url] = mockFetch.mock.calls[0];
-      expect(url).toContain('type=A');
-      expect(url).toContain('line=default');
-      expect(url).toContain('keyword=www');
+      expect(headers['X-API-Key']).toBe('hl6_testkey123456789');
     });
 
     it('maps GleamRecord[] to UnifiedRecord[]', async () => {
       mockFetch.mockResolvedValueOnce({
         code: 0,
+        message: 'ok',
         data: [
           {
-            id: 1,
-            name: 'www',
+            id: 5,
+            subdomain_id: 42,
             type: 'A',
-            content: '1.2.3.4',
-            ttl: 600,
-            priority: null,
-            line: 'default',
+            name: 'myhost.example.com',
+            content: '203.0.113.10',
+            ttl: 1,
+            proxied: true,
+            provider_record_id: '8f2e6d1c9b7a4e3f2d1c0b9a8f7e6d5c',
             status: 'active',
-            updated_at: '2024-06-01',
+            created_at: '2026-01-01T00:00:00Z',
+            updated_at: '2026-01-01T00:00:00Z',
           },
           {
-            id: 2,
-            record_id: 'rec-abc',
-            name: '@',
+            id: 6,
+            subdomain_id: 42,
             type: 'CNAME',
-            value: 'example.com',
-            ttl: 300,
-            priority: 10,
+            name: 'www.myhost.example.com',
+            content: 'myhost.example.com',
+            ttl: 1,
+            proxied: false,
+            provider_record_id: 'abc123',
             status: 'suspended',
-            remark: 'test record',
+            created_at: '2026-02-01T00:00:00Z',
+            updated_at: '2026-02-01T00:00:00Z',
           },
         ],
       });
 
-      const result = await adapter.listRecords(credentials, 'domain-123');
+      const result = await adapter.listRecords(credentials, '42');
 
       expect(result).toHaveLength(2);
       expect(result[0]).toMatchObject({
-        id: '1',
-        domainId: 'domain-123',
-        name: 'www',
+        id: '5',
+        providerRecordId: '8f2e6d1c9b7a4e3f2d1c0b9a8f7e6d5c',
+        domainId: '42',
+        name: 'myhost.example.com',
         type: 'A',
-        value: '1.2.3.4',
-        ttl: 600,
-        line: 'default',
+        value: '203.0.113.10',
+        ttl: 1,
         status: 'active',
+        line: null,
+        priority: null,
       });
       expect(result[1]).toMatchObject({
-        id: '2',
-        providerRecordId: 'rec-abc',
-        name: '@',
-        type: 'CNAME',
-        value: 'example.com',
-        ttl: 300,
-        priority: 10,
+        id: '6',
+        providerRecordId: 'abc123',
         status: 'paused',
-        remark: 'test record',
       });
     });
   });
@@ -367,180 +275,183 @@ describe('createGleamAdapter', () => {
     const recordInput: DnsRecordInput = {
       name: 'www',
       type: 'A',
-      value: '1.2.3.4',
+      value: '203.0.113.10',
       ttl: 600,
       priority: null,
       line: null,
     };
 
-    it('sends POST request with correct body', async () => {
+    it('sends POST request with X-Idempotency-Key', async () => {
       mockFetch.mockResolvedValueOnce({
         code: 0,
-        data: { id: 99, name: 'www', type: 'A', content: '1.2.3.4', ttl: 600 },
+        message: 'created',
+        data: {
+          id: 99,
+          subdomain_id: 42,
+          type: 'A',
+          name: 'myhost.example.com',
+          content: '203.0.113.10',
+          ttl: 1,
+          proxied: false,
+          provider_record_id: 'rec-xyz',
+          status: 'active',
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        },
       });
 
-      await adapter.createRecord(credentials, 'domain-123', recordInput);
+      await adapter.createRecord(credentials, '42', recordInput);
 
       const [url, init] = mockFetch.mock.calls[0];
-      expect(url).toBe('https://api.gleam.com/api/open/subdomains/domain-123/records');
+      expect(url).toBe('https://sld.0n.pub/api/v1/open/dns-records/42');
       expect(init?.method).toBe('POST');
 
       const headers = init?.headers as Record<string, string>;
-      expect(headers['X-Api-Key']).toBe('test-api-key');
-      expect(headers['X-Signature']).toBe('abcd');
+      expect(headers['X-API-Key']).toBe('hl6_testkey123456789');
+      expect(headers['X-Idempotency-Key']).toBe('mock-uuid-1234');
       expect(headers['Content-Type']).toBe('application/json');
 
       const body = JSON.parse(init!.body as string);
-      expect(body).toEqual({
-        name: 'www',
-        type: 'A',
-        content: '1.2.3.4',
-        ttl: 600,
-        priority: undefined,
-        line: undefined,
-      });
-    });
-
-    it('converts @ name to empty string in body', async () => {
-      mockFetch.mockResolvedValueOnce({
-        code: 0,
-        data: { id: 100, name: '@', type: 'A', content: '5.6.7.8', ttl: 600 },
-      });
-
-      await adapter.createRecord(credentials, 'domain-123', {
-        ...recordInput,
-        name: '@',
-      });
-
-      const body = JSON.parse(mockFetch.mock.calls[0][1]!.body as string);
-      expect(body.name).toBe('');
+      expect(body).toEqual({ type: 'A', content: '203.0.113.10' });
     });
 
     it('returns mapped UnifiedRecord', async () => {
       mockFetch.mockResolvedValueOnce({
         code: 0,
+        message: 'created',
         data: {
           id: 99,
-          name: 'www',
+          subdomain_id: 42,
           type: 'A',
-          content: '1.2.3.4',
-          ttl: 600,
-          priority: 5,
-          line: 'default',
+          name: 'myhost.example.com',
+          content: '203.0.113.10',
+          ttl: 1,
+          proxied: false,
+          provider_record_id: 'rec-xyz',
+          status: 'active',
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
         },
       });
 
-      const result = await adapter.createRecord(credentials, 'domain-123', {
-        ...recordInput,
-        priority: 5,
-        line: 'default',
-      });
+      const result = await adapter.createRecord(credentials, '42', recordInput);
 
       expect(result).toMatchObject({
         id: '99',
-        domainId: 'domain-123',
-        name: 'www',
+        providerRecordId: 'rec-xyz',
+        domainId: '42',
         type: 'A',
-        value: '1.2.3.4',
-        ttl: 600,
-        priority: 5,
-        line: 'default',
+        value: '203.0.113.10',
+        ttl: 1,
+        status: 'active',
       });
     });
 
     it('returns null when response data is missing', async () => {
-      mockFetch.mockResolvedValueOnce({ code: 0 });
+      mockFetch.mockResolvedValueOnce({ code: 0, message: 'created' });
 
-      const result = await adapter.createRecord(credentials, 'domain-123', recordInput);
+      const result = await adapter.createRecord(credentials, '42', recordInput);
       expect(result).toBeNull();
     });
   });
 
   describe('updateRecord', () => {
     const recordInput: DnsRecordInput = {
-      name: 'api',
-      type: 'CNAME',
-      value: 'api.example.com',
-      ttl: 300,
+      name: 'www',
+      type: 'A',
+      value: '203.0.113.20',
+      ttl: 600,
       priority: null,
       line: null,
     };
 
-    it('sends PUT request to dns-records endpoint', async () => {
+    it('sends PUT request with domainId in path', async () => {
       mockFetch.mockResolvedValueOnce({
         code: 0,
-        data: { id: 55, name: 'api', type: 'CNAME', content: 'api.example.com', ttl: 300 },
+        message: 'ok',
+        data: {
+          id: 5,
+          subdomain_id: 42,
+          type: 'A',
+          name: 'myhost.example.com',
+          content: '203.0.113.20',
+          ttl: 1,
+          proxied: true,
+          provider_record_id: '8f2e6d1c',
+          status: 'active',
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        },
       });
 
-      await adapter.updateRecord(credentials, 'domain-123', '55', recordInput);
+      await adapter.updateRecord(credentials, '42', '5', recordInput);
 
       const [url, init] = mockFetch.mock.calls[0];
-      expect(url).toBe('https://api.gleam.com/api/open/dns-records/55');
+      expect(url).toBe('https://sld.0n.pub/api/v1/open/dns-records/42/5');
       expect(init?.method).toBe('PUT');
 
+      const headers = init?.headers as Record<string, string>;
+      expect(headers['X-Idempotency-Key']).toBe('mock-uuid-1234');
+
       const body = JSON.parse(init!.body as string);
-      expect(body).toEqual({
-        name: 'api',
-        type: 'CNAME',
-        content: 'api.example.com',
-        ttl: 300,
-        priority: undefined,
-        line: undefined,
-      });
+      expect(body).toEqual({ content: '203.0.113.20' });
     });
 
     it('returns mapped UnifiedRecord', async () => {
       mockFetch.mockResolvedValueOnce({
         code: 0,
+        message: 'ok',
         data: {
-          id: 55,
-          name: 'api',
-          type: 'CNAME',
-          content: 'api.example.com',
-          ttl: 300,
-          priority: 10,
+          id: 5,
+          subdomain_id: 42,
+          type: 'A',
+          name: 'myhost.example.com',
+          content: '203.0.113.20',
+          ttl: 1,
+          proxied: true,
+          provider_record_id: '8f2e6d1c',
+          status: 'active',
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
         },
       });
 
-      const result = await adapter.updateRecord(credentials, 'domain-xyz', '55', {
-        ...recordInput,
-        priority: 10,
-      });
+      const result = await adapter.updateRecord(credentials, '42', '5', recordInput);
 
       expect(result).toMatchObject({
-        id: '55',
-        domainId: 'domain-xyz',
-        name: 'api',
-        type: 'CNAME',
-        value: 'api.example.com',
-        ttl: 300,
-        priority: 10,
+        id: '5',
+        domainId: '42',
+        value: '203.0.113.20',
       });
     });
 
     it('returns null when response data is missing', async () => {
-      mockFetch.mockResolvedValueOnce({ code: 0 });
+      mockFetch.mockResolvedValueOnce({ code: 0, message: 'ok' });
 
-      const result = await adapter.updateRecord(credentials, 'domain-123', '55', recordInput);
+      const result = await adapter.updateRecord(credentials, '42', '5', recordInput);
       expect(result).toBeNull();
     });
   });
 
   describe('deleteRecord', () => {
-    it('sends DELETE request to dns-records endpoint', async () => {
-      mockFetch.mockResolvedValueOnce({ code: 0 });
+    it('sends DELETE request with X-Idempotency-Key', async () => {
+      mockFetch.mockResolvedValueOnce({ code: 0, message: 'ok', data: { message: 'record deleted' } });
 
-      await adapter.deleteRecord(credentials, 'domain-123', '77');
+      await adapter.deleteRecord(credentials, '42', '5');
 
       const [url, init] = mockFetch.mock.calls[0];
-      expect(url).toBe('https://api.gleam.com/api/open/dns-records/77');
+      expect(url).toBe('https://sld.0n.pub/api/v1/open/dns-records/42/5');
       expect(init?.method).toBe('DELETE');
+
+      const headers = init?.headers as Record<string, string>;
+      expect(headers['X-API-Key']).toBe('hl6_testkey123456789');
+      expect(headers['X-Idempotency-Key']).toBe('mock-uuid-1234');
     });
 
     it('does not include a body for DELETE', async () => {
-      mockFetch.mockResolvedValueOnce({ code: 0 });
+      mockFetch.mockResolvedValueOnce({ code: 0, message: 'ok', data: { message: 'record deleted' } });
 
-      await adapter.deleteRecord(credentials, 'domain-123', '77');
+      await adapter.deleteRecord(credentials, '42', '5');
 
       const init = mockFetch.mock.calls[0][1];
       expect(init?.body).toBeUndefined();
@@ -554,13 +465,7 @@ describe('createGleamAdapter', () => {
       await expect(adapter.listDomains(credentials)).rejects.toThrow('Internal Server Error');
     });
 
-    it('throws UpstreamError when API returns error field', async () => {
-      mockFetch.mockResolvedValueOnce({ code: 400, error: 'Invalid request' });
-
-      await expect(adapter.listDomains(credentials)).rejects.toThrow('Invalid request');
-    });
-
-    it('throws UpstreamError with code 502 when API returns non-zero code', async () => {
+    it('throws UpstreamError with status 502', async () => {
       mockFetch.mockResolvedValueOnce({ code: 403, message: 'Forbidden' });
 
       try {
@@ -573,13 +478,7 @@ describe('createGleamAdapter', () => {
     });
 
     it('passes through successful responses with code 0', async () => {
-      mockFetch.mockResolvedValueOnce({ code: 0, data: [] });
-
-      await expect(adapter.listDomains(credentials)).resolves.toEqual([]);
-    });
-
-    it('passes through responses without code field', async () => {
-      mockFetch.mockResolvedValueOnce({ data: [] });
+      mockFetch.mockResolvedValueOnce({ code: 0, message: 'ok', data: [] });
 
       await expect(adapter.listDomains(credentials)).resolves.toEqual([]);
     });
@@ -587,62 +486,10 @@ describe('createGleamAdapter', () => {
     it('throws when credentials are missing apiKey', async () => {
       const badCredentials: AdapterCredentials = {
         platform: 'gleam',
-        config: { apiSecret: 'secret' },
+        config: {},
       };
 
-      await expect(adapter.listDomains(badCredentials)).rejects.toThrow('Gleam API Key/Secret 未配置');
-    });
-
-    it('throws when credentials are missing apiSecret', async () => {
-      const badCredentials: AdapterCredentials = {
-        platform: 'gleam',
-        config: { apiKey: 'key' },
-      };
-
-      await expect(adapter.listDomains(badCredentials)).rejects.toThrow('Gleam API Key/Secret 未配置');
-    });
-  });
-
-  describe('renewStatus mapping', () => {
-    it('maps never_expires to 永久', async () => {
-      mockFetch.mockResolvedValueOnce({
-        code: 0,
-        data: [{ id: 1, full_domain: 'forever.com', never_expires: 1 }],
-      });
-
-      const result = await adapter.listDomains(credentials);
-      expect(result[0].renewStatus).toBe('永久');
-    });
-
-    it('maps expired to 已过期', async () => {
-      mockFetch.mockResolvedValueOnce({
-        code: 0,
-        data: [{ id: 1, full_domain: 'expired.com', status: 'expired' }],
-      });
-
-      const result = await adapter.listDomains(credentials);
-      expect(result[0].renewStatus).toBe('已过期');
-      expect(result[0].expired).toBe(true);
-    });
-
-    it('maps remaining <= 30 to 待续期', async () => {
-      mockFetch.mockResolvedValueOnce({
-        code: 0,
-        data: [{ id: 1, full_domain: 'renew.com', remaining_days: 15 }],
-      });
-
-      const result = await adapter.listDomains(credentials);
-      expect(result[0].renewStatus).toBe('待续期');
-    });
-
-    it('maps remaining > 30 to 正常', async () => {
-      mockFetch.mockResolvedValueOnce({
-        code: 0,
-        data: [{ id: 1, full_domain: 'ok.com', remaining_days: 60 }],
-      });
-
-      const result = await adapter.listDomains(credentials);
-      expect(result[0].renewStatus).toBe('正常');
+      await expect(adapter.listDomains(badCredentials)).rejects.toThrow('Gleam API Key 未配置');
     });
   });
 });

@@ -14,7 +14,7 @@ export const secondVerifySchema = z.object({
 export const accountCredentialSchema = z.union([
   z.object({ platform: z.literal('dnshe'), apiKey: z.string().min(8).max(256), apiSecret: z.string().min(8).max(512) }),
   z.object({ platform: z.literal('dnsneko'), username: z.string().min(1).max(128), apiKey: z.string().min(8).max(512) }),
-  z.object({ platform: z.literal('gleam'), apiKey: z.string().min(8).max(512), apiSecret: z.string().min(8).max(512) })
+  z.object({ platform: z.literal('gleam'), apiKey: z.string().min(8).max(512) })
 ]);
 
 export const createAccountSchema = z.object({

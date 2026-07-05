@@ -1,115 +1,78 @@
 import { fetchJsonWithRetry, UpstreamError } from '../fetcher';
 import type { AdapterCredentials, AdapterListOptions, DNSPlatformAdapter, DnsRecordInput, UnifiedDomain, UnifiedRecord } from '../types';
 
-const BASE = 'https://api.gleam.com';
+const BASE = 'https://sld.0n.pub/api/v1/open';
 
-// -- Gleam API response types (flexible, since API doc is sparse) --
+// -- Gleam API response types --
 
 interface GleamBaseResponse {
-  code?: number;
-  message?: string;
-  error?: string;
+  code: number;
+  message: string;
 }
 
 interface GleamSubdomain {
-  id: number | string;
-  domain?: string;
-  subdomain?: string;
-  full_domain?: string;
-  status?: string;
-  created_at?: string;
-  updated_at?: string;
-  expires_at?: string;
-  remaining_days?: number;
-  never_expires?: number;
-  record_count?: number;
-  dns_count?: number;
+  id: number;
+  domain_id: number;
+  user_id: number;
+  name: string;
+  fqdn: string;
+  claim_cost: number;
+  status: string;
+  suspended_reason?: string;
+  suspended_at?: string | null;
+  dns_records?: GleamRecord[];
+  created_at: string;
+  updated_at: string;
 }
 
 interface GleamRecord {
-  id?: number | string;
-  record_id?: string;
-  name?: string;
-  type?: string;
-  content?: string;
-  value?: string;
-  ttl?: number;
-  priority?: number | null;
-  line?: string | null;
-  status?: string;
-  remark?: string | null;
-  created_at?: string;
-  updated_at?: string;
+  id: number;
+  subdomain_id: number;
+  type: string;
+  name: string;
+  content: string;
+  ttl: number;
+  proxied: boolean;
+  provider_record_id: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
 }
 
-interface GleamListResponse extends GleamBaseResponse {
-  data?: GleamSubdomain[];
-  total?: number;
+interface GleamSubdomainsResponse extends GleamBaseResponse {
+  data: GleamSubdomain[];
 }
 
-interface GleamDetailResponse extends GleamBaseResponse {
-  data?: GleamSubdomain;
+interface GleamSubdomainDetailResponse extends GleamBaseResponse {
+  data: GleamSubdomain;
 }
 
 interface GleamRecordsResponse extends GleamBaseResponse {
-  data?: GleamRecord[];
-  total?: number;
+  data: GleamRecord[];
 }
 
 interface GleamRecordResponse extends GleamBaseResponse {
-  data?: GleamRecord;
+  data: GleamRecord;
 }
 
-// -- HMAC-SHA256 signature --
-
-export async function generateSignature(
-  timestamp: string,
-  method: string,
-  path: string,
-  body: string,
-  apiSecret: string
-): Promise<string> {
-  const message = timestamp + method + path + body;
-  const encoder = new TextEncoder();
-  const keyData = encoder.encode(apiSecret);
-  const messageData = encoder.encode(message);
-
-  const key = await crypto.subtle.importKey(
-    'raw',
-    keyData,
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
-
-  const signature = await crypto.subtle.sign('HMAC', key, messageData);
-  return Array.from(new Uint8Array(signature))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
+interface GleamDeleteResponse extends GleamBaseResponse {
+  data: { message: string };
 }
 
-// -- Headers with HMAC signature --
+// -- Headers --
 
-async function buildHeaders(
-  credentials: AdapterCredentials,
-  method: string,
-  path: string,
-  body: string
-): Promise<HeadersInit> {
+function headers(credentials: AdapterCredentials, json = false, idempotent = false): HeadersInit {
   const apiKey = credentials.config.apiKey;
-  const apiSecret = credentials.config.apiSecret;
-  if (!apiKey || !apiSecret) throw new Error('Gleam API Key/Secret 未配置');
-
-  const timestamp = String(Math.floor(Date.now() / 1000));
-  const signature = await generateSignature(timestamp, method, path, body, apiSecret);
+  if (!apiKey) throw new Error('Gleam API Key 未配置');
 
   const h: Record<string, string> = {
-    'X-Api-Key': apiKey,
-    'X-Timestamp': timestamp,
-    'X-Signature': signature,
+    'X-API-Key': apiKey,
   };
-  if (body) {
+  if (json) {
     h['Content-Type'] = 'application/json';
+  }
+  if (idempotent) {
+    h['X-Idempotency-Key'] = crypto.randomUUID();
   }
   return h;
 }
@@ -117,9 +80,9 @@ async function buildHeaders(
 // -- Response validation --
 
 function assertSuccess<T extends GleamBaseResponse>(payload: T): T {
-  if (payload.code !== undefined && payload.code !== 0 && payload.code !== 200) {
+  if (payload.code !== 0) {
     throw new UpstreamError(
-      payload.message ?? payload.error ?? 'Gleam API 调用失败',
+      payload.message || 'Gleam API 调用失败',
       502
     );
   }
@@ -130,31 +93,14 @@ function assertSuccess<T extends GleamBaseResponse>(payload: T): T {
 
 async function request<T extends GleamBaseResponse>(
   credentials: AdapterCredentials,
-  method: string,
   url: string,
-  body?: unknown
+  init: RequestInit = {}
 ): Promise<T> {
-  const urlObj = new URL(url);
-  const path = urlObj.pathname + urlObj.search;
-  const bodyStr = body ? JSON.stringify(body) : '';
-  const h = await buildHeaders(credentials, method, path, bodyStr);
-  const init: RequestInit = { method, headers: h };
-  if (body) {
-    init.body = bodyStr;
-  }
   const payload = await fetchJsonWithRetry<T>(url, init);
   return assertSuccess(payload);
 }
 
 // -- Mapping helpers --
-
-function toRemainingDays(expiresAt?: string, remaining?: number): number | null {
-  if (typeof remaining === 'number') return remaining;
-  if (!expiresAt) return null;
-  const time = new Date(expiresAt.replace(' ', 'T')).getTime();
-  if (Number.isNaN(time)) return null;
-  return Math.ceil((time - Date.now()) / 86400000);
-}
 
 function mapDomain(
   item: GleamSubdomain,
@@ -166,58 +112,41 @@ function mapDomain(
     groupColor: string | null;
   }
 ): UnifiedDomain {
-  const name = item.full_domain ?? item.domain ?? item.subdomain ?? '';
-  const remaining = toRemainingDays(item.expires_at, item.remaining_days);
-  const expired = item.status === 'expired' || (remaining !== null && remaining < 0);
   return {
     id: String(item.id),
-    name,
+    name: item.fqdn,
     platform: 'gleam',
     accountId: account.id,
     accountName: account.name,
     groupId: account.groupId,
     groupName: account.groupName,
     groupColor: account.groupColor,
-    status: item.status ?? 'unknown',
-    dnsStatus: item.status === 'active' ? '正常' : item.status ?? 'unknown',
-    createdAt: item.created_at ?? null,
-    expiresAt: item.expires_at ?? null,
-    expired,
-    remainingDays: remaining,
-    renewStatus: item.never_expires
-      ? '永久'
-      : expired
-        ? '已过期'
-        : remaining !== null && remaining <= 30
-          ? '待续期'
-          : '正常',
-    recordCount:
-      typeof item.record_count === 'number'
-        ? item.record_count
-        : typeof item.dns_count === 'number'
-          ? item.dns_count
-          : null,
+    status: item.status,
+    dnsStatus: item.status === 'active' ? '正常' : item.status,
+    createdAt: item.created_at,
+    expiresAt: null,
+    expired: false,
+    remainingDays: null,
+    renewStatus: '正常',
+    recordCount: Array.isArray(item.dns_records) ? item.dns_records.length : null,
     raw: item,
   };
 }
 
 function mapRecord(record: GleamRecord, domainId: string): UnifiedRecord {
   return {
-    id: String(record.id ?? record.record_id ?? ''),
-    providerRecordId: record.record_id ?? null,
+    id: String(record.id),
+    providerRecordId: record.provider_record_id || null,
     domainId,
-    name: record.name ?? '@',
-    type: record.type ?? 'A',
-    value: record.content ?? record.value ?? '',
-    line: record.line ?? null,
-    ttl: Number(record.ttl ?? 600),
-    priority: record.priority ?? null,
-    remark: record.remark ?? null,
-    status:
-      record.status === 'suspended' || record.status === 'paused'
-        ? 'paused'
-        : 'active',
-    updatedAt: record.updated_at ?? record.created_at ?? null,
+    name: record.name,
+    type: record.type,
+    value: record.content,
+    line: null,
+    ttl: record.ttl,
+    priority: null,
+    remark: null,
+    status: record.status === 'active' ? 'active' : 'paused',
+    updatedAt: record.updated_at,
     raw: record,
   };
 }
@@ -236,52 +165,49 @@ export function createGleamAdapter(accountMeta: {
     rateLimit: { accountWindowLimit: 55, windowSeconds: 60 },
 
     async listDomains(credentials, options: AdapterListOptions = {}) {
-      const url = new URL(`${BASE}/api/open/subdomains`);
-      url.searchParams.set('page', String(options.page ?? 1));
-      url.searchParams.set('size', String(options.size ?? 100));
-      if (options.search) url.searchParams.set('search', options.search);
-      if (options.status) url.searchParams.set('status', options.status);
-      const payload = await request<GleamListResponse>(credentials, 'GET', url.toString());
+      const url = new URL(`${BASE}/subdomains`);
+      if (options.page) url.searchParams.set('page', String(options.page));
+      if (options.size) url.searchParams.set('size', String(options.size));
+      const payload = await request<GleamSubdomainsResponse>(credentials, url.toString(), {
+        method: 'GET',
+        headers: headers(credentials),
+      });
       return (payload.data ?? []).map((item) => mapDomain(item, accountMeta));
     },
 
     async getDomain(credentials, domainId) {
-      const payload = await request<GleamDetailResponse>(
+      const payload = await request<GleamSubdomainDetailResponse>(
         credentials,
-        'GET',
-        `${BASE}/api/open/subdomains/${encodeURIComponent(domainId)}`
+        `${BASE}/subdomains/${encodeURIComponent(domainId)}`,
+        { method: 'GET', headers: headers(credentials) }
       );
       if (!payload.data) throw new UpstreamError('Gleam 子域名不存在', 404, 'not_found');
       return mapDomain(payload.data, accountMeta);
     },
 
-    async listRecords(credentials, domainId, options = {}) {
-      const url = new URL(
-        `${BASE}/api/open/subdomains/${encodeURIComponent(domainId)}/records`
+    async listRecords(credentials, domainId) {
+      const payload = await request<GleamRecordsResponse>(
+        credentials,
+        `${BASE}/dns-records/${encodeURIComponent(domainId)}`,
+        { method: 'GET', headers: headers(credentials) }
       );
-      url.searchParams.set('page', String(options.page ?? 1));
-      url.searchParams.set('size', String(options.size ?? 100));
-      if (options.type) url.searchParams.set('type', options.type);
-      if (options.line) url.searchParams.set('line', options.line);
-      if (options.keyword) url.searchParams.set('keyword', options.keyword);
-      const payload = await request<GleamRecordsResponse>(credentials, 'GET', url.toString());
       return (payload.data ?? []).map((record) => mapRecord(record, domainId));
     },
 
     async createRecord(credentials, domainId, input: DnsRecordInput) {
       const body: Record<string, unknown> = {
-        name: input.name === '@' ? '' : input.name,
         type: input.type,
         content: input.value,
-        ttl: input.ttl,
-        priority: input.priority ?? undefined,
-        line: input.line ?? undefined,
       };
+      if (input.ttl !== undefined && input.ttl !== 600) body.ttl = input.ttl;
       const payload = await request<GleamRecordResponse>(
         credentials,
-        'POST',
-        `${BASE}/api/open/subdomains/${encodeURIComponent(domainId)}/records`,
-        body
+        `${BASE}/dns-records/${encodeURIComponent(domainId)}`,
+        {
+          method: 'POST',
+          headers: headers(credentials, true, true),
+          body: JSON.stringify(body),
+        }
       );
       if (payload.data) {
         return mapRecord(payload.data, domainId);
@@ -289,32 +215,33 @@ export function createGleamAdapter(accountMeta: {
       return null;
     },
 
-    async updateRecord(credentials, _domainId, recordId, input) {
+    async updateRecord(credentials, domainId, recordId, input) {
       const body: Record<string, unknown> = {
-        name: input.name === '@' ? '' : input.name,
-        type: input.type,
         content: input.value,
-        ttl: input.ttl,
-        priority: input.priority ?? undefined,
-        line: input.line ?? undefined,
       };
       const payload = await request<GleamRecordResponse>(
         credentials,
-        'PUT',
-        `${BASE}/api/open/dns-records/${encodeURIComponent(recordId)}`,
-        body
+        `${BASE}/dns-records/${encodeURIComponent(domainId)}/${encodeURIComponent(recordId)}`,
+        {
+          method: 'PUT',
+          headers: headers(credentials, true, true),
+          body: JSON.stringify(body),
+        }
       );
       if (payload.data) {
-        return mapRecord(payload.data, _domainId);
+        return mapRecord(payload.data, domainId);
       }
       return null;
     },
 
-    async deleteRecord(credentials, _domainId, recordId) {
-      await request<GleamBaseResponse>(
+    async deleteRecord(credentials, domainId, recordId) {
+      await request<GleamDeleteResponse>(
         credentials,
-        'DELETE',
-        `${BASE}/api/open/dns-records/${encodeURIComponent(recordId)}`
+        `${BASE}/dns-records/${encodeURIComponent(domainId)}/${encodeURIComponent(recordId)}`,
+        {
+          method: 'DELETE',
+          headers: headers(credentials, false, true),
+        }
       );
     },
   };
