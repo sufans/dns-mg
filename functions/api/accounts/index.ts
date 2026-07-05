@@ -79,6 +79,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (error instanceof ZodError) {
       return errorResponse(`请求参数校验失败: ${error.issues.map((i) => i.message).join('; ')}`, 400, 'validation_error');
     }
-    throw error;
+    const message = error instanceof Error ? error.message : '服务器内部错误';
+    return errorResponse(message, 500, 'internal_error');
   }
 };
