@@ -64,6 +64,7 @@ export function DomainsPage(): JSX.Element {
             <option value="all">全部平台</option>
             <option value="dnshe">DNSHE</option>
             <option value="dnsneko">DNSNEKO</option>
+            <option value="gleam">GLEAM</option>
           </Select>
         </CardContent>
       </Card>

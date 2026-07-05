@@ -19,7 +19,7 @@ export function DashboardPage(): JSX.Element {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-semibold tracking-tight">仪表盘</h1>
-        <p className="mt-2 text-slate-400">跨 DNSHE 与 DNSNEKO 聚合展示域名、解析和 API 账号状态。</p>
+        <p className="mt-2 text-slate-400">跨 DNSHE、DNSNEKO 与 GLEAM 聚合展示域名、解析和 API 账号状态。</p>
       </div>
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatCard title="域名总数" value={list.length} note="来自所有启用账号" icon={Globe2} />
