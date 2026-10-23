@@ -471,9 +471,9 @@ describe('createGleamAdapter', () => {
       try {
         await adapter.listDomains(credentials);
         expect.fail('Expected error to be thrown');
-      } catch (e: any) {
-        expect(e.status).toBe(502);
-        expect(e.message).toBe('Forbidden');
+      } catch (e: unknown) {
+        expect((e as { status: number }).status).toBe(502);
+        expect((e as Error).message).toBe('Forbidden');
       }
     });
 

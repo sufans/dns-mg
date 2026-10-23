@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs';
-import { CSRF_COOKIE, SESSION_COOKIE, parseCookies } from './cookies';
+import { CSRF_COOKIE, parseCookies, readSessionToken } from './cookies';
 import { errorResponse } from './response';
 import { verifyJwt } from './jwt';
 import type { AuthContext, Env } from './types';
@@ -7,10 +7,8 @@ import type { AuthContext, Env } from './types';
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 export async function getAuthContext(request: Request, env: Env): Promise<AuthContext | null> {
-  const cookies = parseCookies(request);
-  const token = cookies[SESSION_COOKIE];
-  if (!token) return null;
-  return verifyJwt(token, env.JWT_SECRET);
+  const token = readSessionToken(request);
+  return token ? verifyJwt(token, env.JWT_SECRET) : null;
 }
 
 function sameOrigin(request: Request, origin: string | undefined): boolean {
