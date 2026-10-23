@@ -12,7 +12,17 @@
 }
 ```
 
-鉴权使用 HttpOnly Cookie `__Host-dns_session`。所有非 GET 请求必须携带 `X-CSRF-Token`，值来自非 HttpOnly Cookie `dns_csrf`。
+鉴权使用 HttpOnly Cookie：HTTPS 环境为 `__Host-dns_session`，本地 HTTP 开发为 `dns_session`（`__Host-` 前缀要求 Secure，HTTP 下浏览器会直接丢弃）。所有非 GET 请求必须携带 `X-CSRF-Token`，值来自非 HttpOnly Cookie `dns_csrf`。
+
+错误响应同样使用统一结构，`ok=false` 并带上 `code`：
+
+| HTTP | 典型 `code` | 含义 |
+|------|-------------|------|
+| 400 | `unsupported_operation` / `unsupported_batch_operation` | 当前平台不支持该能力 |
+| 401 | `unauthorized` | 会话失效，需要重新登录 |
+| 403 | `csrf_failed` / `csrf_origin_failed` / `second_verification_failed` | CSRF 或二次密码校验失败 |
+| 429 | `login_locked` | 登录失败次数超限，账号被临时锁定 15 分钟 |
+| 500 | `internal_error` | 未预期异常，响应含 `requestId` 便于排查 |
 
 ## Auth
 
@@ -64,8 +74,8 @@
 | POST | `/api/records/:accountId/:domainId` | 新增记录 |
 | PUT | `/api/records/:accountId/:domainId/:recordId` | 修改记录 |
 | DELETE | `/api/records/:accountId/:domainId/:recordId` | 删除记录 |
-| POST | `/api/records/:accountId/:domainId/:recordId/status` | 暂停/启用，当前 DNSNEKO 支持 |
-| POST | `/api/records/batch` | 批量操作，当前 DNSNEKO 支持官方批量接口 |
+| POST | `/api/records/:accountId/:domainId/:recordId/status` | 暂停/启用，仅 DNSNEKO 支持；其他平台返回 `400 unsupported_operation` |
+| POST | `/api/records/batch` | 批量操作，仅 DNSNEKO 支持官方批量接口 |
 
 ## 系统
 

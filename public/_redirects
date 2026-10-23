@@ -1,9 +1,11 @@
-# SPA fallback: serve index.html for client-side routes so deep links such as
-# /domains or /domains/1/abc work on a hard refresh or direct visit.
-/login      /index.html  200
-/domains    /index.html  200
-/domains/*  /index.html  200
-/accounts   /index.html  200
-/settings   /index.html  200
-/logs       /index.html  200
-/backup     /index.html  200
+# SPA fallback for client-side routes. Each entry serves the root document
+# (200 rewrite) so deep links survive a hard refresh. Static assets under
+# /assets/* are never rewritten, and Pages Functions handle /api/* first.
+/login      /  200
+/accounts   /  200
+/groups     /  200
+/settings   /  200
+/logs       /  200
+/backup     /  200
+/domains    /  200
+/domains/*  /  200

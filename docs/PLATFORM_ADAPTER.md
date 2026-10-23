@@ -13,6 +13,9 @@ interface UnifiedDomain {
   platform: DNSPlatform;
   accountId: number;
   accountName: string;
+  groupId: number | null;
+  groupName: string | null;
+  groupColor: string | null;
   status: string;
   dnsStatus: string;
   createdAt: string | null;
@@ -49,6 +52,8 @@ interface UnifiedRecord {
 5. 在 `factory.ts` 注册。
 6. 在 `validators.ts` 增加凭证 Zod 校验。
 7. 在 `AccountsPage.tsx` 添加表单字段。
+8. 在 `functions/_shared/fetcher.ts` 的主机白名单中加入新的 API 域名，否则请求会被拒绝。
+9. 在 `src/types/models.ts`、`DomainsPage.tsx`、`DashboardPage.tsx` 的平台筛选中补充新平台。
 
 ## 安全要求
 
@@ -57,8 +62,10 @@ interface UnifiedRecord {
 - 所有写操作必须经过 CSRF 校验。
 - 添加、删除、修改密钥等敏感动作必须要求管理员二次验证。
 - 平台适配器必须定义限流参数，避免触发上游封禁。
+- 可选能力（`setRecordStatus`、`batchOperation`）没有实现时，前端应隐藏对应按钮，接口返回 `unsupported_operation`。
 
 ## 当前平台实现
 
 - DNSHE：`https://api005.dnshe.com/index.php?m=domain_hub`，Header 使用 `X-API-Key` / `X-API-Secret`。
 - DNSNEKO：`https://www.dnsneko.com/api/v1/dns`，Header 使用 `X-DNSNEKO-USERNAME` / `X-DNSNEKO-API-KEY`。
+- GLEAM：`https://sld.0n.pub/api/v1/open`，Header 使用 `X-API-Key`；限流 55 次/60 秒。

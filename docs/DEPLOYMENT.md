@@ -6,10 +6,12 @@
 
 Pages 构建配置：
 
-- Framework preset: `Vite`
+- Framework preset: `None`（不要选 Vite 预设，否则构建命令与输出目录会被覆盖）
 - Build command: `npm run build`
 - Build output directory: `dist`
 - Node.js: 20.19 或更高
+
+`public/_redirects` 负责 SPA 深链接回退（`/domains/*` 等直接访问返回 `index.html`），`public/_routes.json` 只把 `/api/*` 交给 Functions。两者都需要随构建产物一起部署，请不要删除。
 
 ## 2. 创建 D1 数据库
 
@@ -100,9 +102,20 @@ export default {
 
 ```bash
 npm install
-npm run build
 npm run d1:init:local
-npm run pages:dev
+npm run pages:dev   # 先构建再启动 wrangler pages dev dist
 ```
 
-本地 secrets 放入 `.dev.vars`，不要提交到 Git。
+只想调前端样式时可以 `npm run dev`（Vite，无 Functions，`/api/*` 会 404）。
+
+本地 secrets 放入 `.dev.vars`（已被 `.gitignore` 忽略），不要提交到 Git：
+
+```env
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD_HASH=$2a$12$...
+JWT_SECRET=<32 字节随机串>
+ENCRYPTION_KEY=<32 字节随机串>
+APP_ORIGIN=http://localhost:8788
+```
+
+`APP_ORIGIN` 必须与本地访问地址完全一致（含端口），否则非 GET 请求会被 CSRF 来源校验拒绝。

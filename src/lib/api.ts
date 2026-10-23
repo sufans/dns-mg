@@ -1,4 +1,5 @@
 import type { ApiEnvelope } from '../types/models';
+import { navigate } from './router';
 
 export class ApiError extends Error {
   constructor(
@@ -30,7 +31,9 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   if (contentType.includes('text/csv')) return (await response.text()) as T;
   const envelope = (await response.json()) as ApiEnvelope<T>;
   if (!response.ok || !envelope.ok) {
-    if (response.status === 401 && location.pathname !== '/login') window.history.replaceState(null, '', '/login');
+    // Navigate through the router so the SPA re-renders; a bare replaceState
+    // would change the URL but leave the app showing the previous (blank) view.
+    if (response.status === 401 && location.pathname !== '/login') navigate('/login');
     throw new ApiError(envelope.error ?? '请求失败', response.status, envelope.code, envelope.requestId);
   }
   return envelope.data as T;

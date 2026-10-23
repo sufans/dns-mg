@@ -5,7 +5,7 @@
 - 管理员用户名来自 `ADMIN_USERNAME`。
 - 管理员密码只接受 `ADMIN_PASSWORD_HASH` bcrypt 哈希。
 - 前端永远不执行密码校验。
-- 登录成功后写入 HttpOnly `__Host-dns_session` Cookie。
+- 登录成功后写入 HttpOnly 会话 Cookie：HTTPS 使用 `__Host-dns_session`，本地 HTTP 开发使用 `dns_session`。
 - JWT 有效期 24 小时。
 
 ## 登录失败锁定

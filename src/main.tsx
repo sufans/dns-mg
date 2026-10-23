@@ -3,7 +3,11 @@ import ReactDOM from 'react-dom/client';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { App } from './App';
 import { queryClient } from './lib/query';
+import { applyTheme, getStoredTheme } from './lib/theme';
 import './index.css';
+
+// Applied before render to avoid a flash of the wrong theme.
+applyTheme(getStoredTheme());
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

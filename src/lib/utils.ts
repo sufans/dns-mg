@@ -29,5 +29,6 @@ export function downloadText(filename: string, content: string, mime = 'text/pla
   document.body.append(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(url);
+  // Revoking too early cancels the download in Firefox and Safari.
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
