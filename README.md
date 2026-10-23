@@ -265,7 +265,7 @@ cloudflare-dns-manager/
 │   │   ├── LoginPage.tsx     # 登录页
 │   │   ├── DashboardPage.tsx # 仪表盘 (统计概览)
 │   │   ├── AccountsPage.tsx  # API 账号管理
-│   │   ├── GroupsPage.tsx    # 分组管理
+│   │   ├── （分组管理暂无独立页面，通过账号编辑时的分组下拉维护）
 │   │   ├── DomainsPage.tsx   # 跨平台域名列表
 │   │   ├── DomainDetailPage.tsx # 域名详情 + DNS 记录管理
 │   │   ├── SettingsPage.tsx  # 系统设置
@@ -369,6 +369,8 @@ JWT_SECRET=your-dev-jwt-secret
 ENCRYPTION_KEY=your-dev-encryption-key
 ```
 
+> 本地通过 `http://localhost` 访问时，会话 Cookie 会自动使用 `dns_session` 而非 `__Host-dns_session`，否则浏览器会因缺少 Secure 属性而丢弃 Cookie，导致登录后立刻掉线。生产 HTTPS 环境仍使用 `__Host-` 前缀。
+
 ## 自动化到期检查
 
 ### 端点
@@ -424,4 +426,4 @@ export default {
 
 ## 许可
 
-MIT
+本项目仓库当前未附带 LICENSE 文件；如需对外分发，请先补充许可证声明。

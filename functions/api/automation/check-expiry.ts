@@ -1,6 +1,7 @@
 import { EmailMessage } from 'cloudflare:email';
 import { getAuthContext } from '../../_shared/auth';
 import { decryptAccountConfig, listAccountRows } from '../../_shared/db';
+import { listAllDomains } from '../../_shared/list-all';
 import { adapterForAccount } from '../../_shared/platforms/factory';
 import { reservePlatformRequest } from '../../_shared/rate-limit';
 import { errorResponse, jsonResponse } from '../../_shared/response';
@@ -52,20 +53,30 @@ async function sendReminder(env: Env, domains: UnifiedDomain[]): Promise<string>
   return 'sent';
 }
 
+function matchesReminder(domain: UnifiedDomain, days: number[]): boolean {
+  if (domain.expired || (domain.remainingDays !== null && domain.remainingDays < 0)) return true;
+  if (domain.remainingDays === null || days.length === 0) return false;
+  // Any configured reminder threshold that is within range should trigger a
+  // reminder, so a 7-day watch is not swallowed by also having a 30-day watch.
+  return days.some((day) => day >= 0 && domain.remainingDays !== null && domain.remainingDays <= day);
+}
+
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!(await authorized(request, env))) return errorResponse('未授权的自动化请求', 401, 'unauthorized');
   const settings = await readReminderSettings(env);
   const accounts = await listAccountRows(env, true);
   const watched: UnifiedDomain[] = [];
   const errors: Array<{ accountId: number; error: string }> = [];
+  const reminderDays = settings.days.length > 0 ? [...settings.days].sort((a, b) => b - a) : [];
 
   for (const row of accounts) {
     try {
       const adapter = adapterForAccount(row);
-      await reservePlatformRequest(env, row.id, adapter.rateLimit.accountWindowLimit, adapter.rateLimit.windowSeconds);
       const config = await decryptAccountConfig(env, row);
-      const domains = await adapter.listDomains({ platform: row.platform, config }, { page: 1, size: 500 });
-      watched.push(...domains.filter((d) => d.remainingDays !== null && (d.remainingDays <= Math.max(...settings.days) || d.expired)));
+      const credentials = { platform: row.platform, config } as const;
+      const reserve = () => reservePlatformRequest(env, row.id, adapter.rateLimit.accountWindowLimit, adapter.rateLimit.windowSeconds);
+      const domains = await listAllDomains(adapter, credentials, reserve);
+      watched.push(...domains.filter((d) => matchesReminder(d, reminderDays)));
     } catch (error) {
       errors.push({ accountId: row.id, error: error instanceof Error ? error.message : '未知错误' });
     }
