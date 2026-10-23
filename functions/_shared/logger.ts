@@ -30,8 +30,10 @@ export async function logOperation(
         payload.errorMessage ?? null
       )
       .run();
-  } catch {
-    // Logging must never break production requests.
+  } catch (error) {
+    // Logging must never break production requests, but a silently dropped audit
+    // entry is a security problem: surface it in the Worker log instead.
+    console.error('[logOperation] failed to persist audit log', payload.action, error);
   }
 }
 

@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Pause, Pencil, Play, Plus, Trash2, X } from 'lucide-react';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { EmptyState } from '../components/ui/empty';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select } from '../components/ui/select';
@@ -17,85 +19,195 @@ import type { UnifiedDomain, UnifiedRecord } from '../types/models';
 
 const recordTypes = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA'] as const;
 
+interface RecordForm {
+  name: string;
+  type: string;
+  value: string;
+  line: string;
+  ttl: number;
+  priority: string;
+  remark: string;
+}
+
+const EMPTY_FORM: RecordForm = { name: '@', type: 'A', value: '', line: 'default', ttl: 600, priority: '', remark: '' };
+
 export function DomainDetailPage({ accountId, domainId }: { accountId: string; domainId: string }): JSX.Element {
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ name: '@', type: 'A', value: '', line: 'default', ttl: 600, priority: '', remark: '' });
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<UnifiedRecord | null>(null);
+  const [form, setForm] = useState<RecordForm>(EMPTY_FORM);
+
+  const queryKey = ['domain-detail', accountId, domainId];
   const query = useQuery({
-    queryKey: ['domain-detail', accountId, domainId],
+    queryKey,
     queryFn: () => api.get<{ domain: UnifiedDomain; records: UnifiedRecord[] }>(`/api/domains/${accountId}/${domainId}`)
   });
-  const create = useMutation({
-    mutationFn: () => api.post(`/api/records/${accountId}/${domainId}`, {
-      name: form.name,
-      type: form.type,
-      value: form.value,
-      line: form.line || null,
-      ttl: Number(form.ttl),
-      priority: form.priority ? Number(form.priority) : null,
-      remark: form.remark || null
-    }),
+
+  function resetForm(): void {
+    setShowForm(false);
+    setEditingId(null);
+    setForm(EMPTY_FORM);
+  }
+
+  function startCreate(): void {
+    if (showForm && editingId === null) {
+      resetForm();
+      return;
+    }
+    setEditingId(null);
+    setForm(EMPTY_FORM);
+    setShowForm(true);
+  }
+
+  function startEdit(record: UnifiedRecord): void {
+    setEditingId(record.id);
+    setForm({
+      name: record.name,
+      type: record.type,
+      value: record.value,
+      line: record.line ?? 'default',
+      ttl: record.ttl,
+      priority: record.priority === null ? '' : String(record.priority),
+      remark: record.remark ?? ''
+    });
+    setShowForm(true);
+  }
+
+  const save = useMutation({
+    mutationFn: () => {
+      const body = {
+        name: form.name,
+        type: form.type,
+        value: form.value,
+        line: form.line || null,
+        ttl: Number(form.ttl),
+        priority: form.priority ? Number(form.priority) : null,
+        remark: form.remark || null
+      };
+      return editingId === null
+        ? api.post(`/api/records/${accountId}/${domainId}`, body)
+        : api.put(`/api/records/${accountId}/${domainId}/${editingId}`, body);
+    },
     onSuccess: async () => {
-      setShowForm(false);
-      setForm({ name: '@', type: 'A', value: '', line: 'default', ttl: 600, priority: '', remark: '' });
-      await queryClient.invalidateQueries({ queryKey: ['domain-detail', accountId, domainId] });
+      resetForm();
+      await queryClient.invalidateQueries({ queryKey });
     }
   });
-  const del = useMutation({
-    mutationFn: (recordId: string) => api.del(`/api/records/${accountId}/${domainId}/${recordId}`),
-    onSuccess: async () => queryClient.invalidateQueries({ queryKey: ['domain-detail', accountId, domainId] })
+
+  const status = useMutation({
+    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => api.post(`/api/records/${accountId}/${domainId}/${id}/status`, { enabled }),
+    onSuccess: async () => queryClient.invalidateQueries({ queryKey })
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: string) => api.del(`/api/records/${accountId}/${domainId}/${id}`),
+    onSuccess: async () => {
+      setPendingDelete(null);
+      await queryClient.invalidateQueries({ queryKey });
+    }
   });
 
   function submit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
-    create.mutate();
+    save.mutate();
   }
 
   const domain = query.data?.domain;
+  const records = query.data?.records ?? [];
+  const subtitle = domain
+    ? `${domain.platform} / ${domain.accountName} / 到期 ${formatDate(domain.expiresAt)}`
+    : query.error
+      ? '域名信息加载失败'
+      : '加载中...';
   return (
     <div className="space-y-6">
       <Button variant="ghost" onClick={() => navigate('/domains')}><ArrowLeft className="mr-2 h-4 w-4" />返回域名列表</Button>
       <div>
         <h1 className="text-3xl font-semibold tracking-tight">{domain?.name ?? '域名详情'}</h1>
-        <p className="mt-2 text-slate-400">{domain ? `${domain.platform} / ${domain.accountName} / 到期 ${formatDate(domain.expiresAt)}` : '加载中...'}</p>
+        <p className="mt-2 text-muted-foreground">{subtitle}</p>
       </div>
+      {query.error ? <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-700 dark:text-red-200">加载失败：{query.error.message}</div> : null}
       <Card>
         <CardHeader className="flex-row items-center justify-between space-y-0">
-          <CardTitle>解析记录</CardTitle>
-          <Button variant="neon" size="sm" onClick={() => setShowForm((v) => !v)}><Plus className="mr-2 h-4 w-4" />添加记录</Button>
+          <CardTitle>解析记录{records.length ? `（${records.length}）` : ''}</CardTitle>
+          {domain ? (
+            <Button variant={showForm ? 'ghost' : 'neon'} size="sm" onClick={startCreate}>
+              {showForm ? <X className="mr-2 h-4 w-4" /> : <Plus className="mr-2 h-4 w-4" />}
+              {showForm ? '取消' : '添加记录'}
+            </Button>
+          ) : null}
         </CardHeader>
         <CardContent>
           {showForm ? (
-            <form onSubmit={submit} className="mb-6 grid gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-4 md:grid-cols-6">
-              <div className="space-y-2"><Label>主机</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></div>
-              <div className="space-y-2"><Label>类型</Label><Select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>{recordTypes.map((type) => <option key={type}>{type}</option>)}</Select></div>
-              <div className="space-y-2 md:col-span-2"><Label>记录值</Label><Input value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} required /></div>
-              <div className="space-y-2"><Label>线路</Label><Input value={form.line} onChange={(e) => setForm({ ...form, line: e.target.value })} /></div>
-              <div className="space-y-2"><Label>TTL</Label><Input type="number" min={60} max={86400} value={form.ttl} onChange={(e) => setForm({ ...form, ttl: Number(e.target.value) })} /></div>
-              <div className="space-y-2"><Label>优先级</Label><Input value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} /></div>
-              <div className="space-y-2 md:col-span-3"><Label>备注</Label><Input value={form.remark} onChange={(e) => setForm({ ...form, remark: e.target.value })} /></div>
-              <div className="flex items-end md:col-span-2"><Button type="submit" disabled={create.isPending}>{create.isPending ? '提交中...' : '保存'}</Button></div>
-              {create.error ? <div className="text-sm text-red-300 md:col-span-6">{create.error.message}</div> : null}
+            <form onSubmit={submit} className="mb-6 grid gap-3 rounded-xl border border-border bg-muted/40 p-4 md:grid-cols-6">
+              <div className="space-y-2"><Label htmlFor="record-name">主机</Label><Input id="record-name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></div>
+              <div className="space-y-2"><Label htmlFor="record-type">类型</Label><Select id="record-type" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>{recordTypes.map((type) => <option key={type}>{type}</option>)}</Select></div>
+              <div className="space-y-2 md:col-span-2"><Label htmlFor="record-value">记录值</Label><Input id="record-value" value={form.value} onChange={(e) => setForm({ ...form, value: e.target.value })} required /></div>
+              <div className="space-y-2"><Label htmlFor="record-line">线路</Label><Input id="record-line" value={form.line} onChange={(e) => setForm({ ...form, line: e.target.value })} /></div>
+              <div className="space-y-2"><Label htmlFor="record-ttl">TTL</Label><Input id="record-ttl" type="number" min={60} max={86400} value={form.ttl} onChange={(e) => setForm({ ...form, ttl: Number(e.target.value) })} /></div>
+              <div className="space-y-2"><Label htmlFor="record-priority">优先级</Label><Input id="record-priority" value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} /></div>
+              <div className="space-y-2 md:col-span-3"><Label htmlFor="record-remark">备注</Label><Input id="record-remark" value={form.remark} onChange={(e) => setForm({ ...form, remark: e.target.value })} /></div>
+              <div className="flex items-end md:col-span-2"><Button type="submit" disabled={save.isPending}>{save.isPending ? '提交中...' : editingId === null ? '保存' : '保存修改'}</Button></div>
+              {save.error ? <div className="text-sm text-red-600 dark:text-red-400 md:col-span-6">{save.error.message}</div> : null}
             </form>
           ) : null}
-          <Table>
-            <THead><TR><TH>主机</TH><TH>类型</TH><TH>记录值</TH><TH>线路</TH><TH>TTL</TH><TH>状态</TH><TH>更新时间</TH><TH>操作</TH></TR></THead>
-            <TBody>
-              {(query.data?.records ?? []).map((record) => (
-                <TR key={record.id}>
-                  <TD className="font-medium">{record.name}</TD>
-                  <TD><Badge variant="secondary">{record.type}</Badge></TD>
-                  <TD className="max-w-md truncate">{record.value}</TD>
-                  <TD>{record.line ?? '-'}</TD>
-                  <TD>{record.ttl}</TD>
-                  <TD><Badge variant={record.status === 'active' ? 'success' : 'warning'}>{record.status === 'active' ? '启用' : '暂停'}</Badge></TD>
-                  <TD>{formatDate(record.updatedAt)}</TD>
-                  <TD><Button variant="ghost" size="sm" onClick={() => del.mutate(record.id)} disabled={del.isPending}><Trash2 className="h-4 w-4" /></Button></TD>
-                </TR>
-              ))}
-            </TBody>
-          </Table>
+          {query.isLoading ? (
+            <div className="p-6 text-sm text-muted-foreground">正在加载解析记录...</div>
+          ) : query.error ? (
+            <div className="p-6 text-sm text-muted-foreground">无法读取解析记录，请返回域名列表重试。</div>
+          ) : records.length === 0 ? (
+            <EmptyState title="暂无解析记录" description="点击「添加记录」创建第一条 A、CNAME 或 TXT 记录。" />
+          ) : (
+            <Table>
+              <THead><TR><TH>主机</TH><TH>类型</TH><TH>记录值</TH><TH>线路</TH><TH>TTL</TH><TH>状态</TH><TH>更新时间</TH><TH>操作</TH></TR></THead>
+              <TBody>
+                {records.map((record) => (
+                  <TR key={record.id}>
+                    <TD className="font-medium">{record.name}</TD>
+                    <TD><Badge variant="secondary">{record.type}</Badge></TD>
+                    <TD className="max-w-md truncate" title={record.value}>{record.value}</TD>
+                    <TD>{record.line ?? '-'}</TD>
+                    <TD>{record.ttl}</TD>
+                    <TD><Badge variant={record.status === 'active' ? 'success' : 'warning'}>{record.status === 'active' ? '启用' : '暂停'}</Badge></TD>
+                    <TD>{formatDate(record.updatedAt)}</TD>
+                    <TD className="space-x-2 whitespace-nowrap">
+                      <Button size="sm" variant="outline" aria-label={`编辑 ${record.name}`} title="编辑" onClick={() => startEdit(record)}><Pencil className="h-4 w-4" /></Button>
+                      {domain?.platform === 'dnsneko' ? (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          aria-label={`${record.status === 'active' ? '暂停' : '启用'} ${record.name}`}
+                          title={record.status === 'active' ? '暂停解析' : '启用解析'}
+                          disabled={status.isPending}
+                          onClick={() => status.mutate({ id: record.id, enabled: record.status !== 'active' })}
+                        >
+                          {record.status === 'active' ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                        </Button>
+                      ) : null}
+                      <Button size="sm" variant="ghost" aria-label={`删除 ${record.name}`} title="删除" onClick={() => setPendingDelete(record)}><Trash2 className="h-4 w-4" /></Button>
+                    </TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+          )}
+          {status.error ? <div className="mt-3 text-sm text-red-600 dark:text-red-400">{status.error.message}</div> : null}
         </CardContent>
       </Card>
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title="删除解析记录"
+        description={pendingDelete ? `确定删除 ${pendingDelete.name} ${pendingDelete.type} ${pendingDelete.value} 吗？该操作会立即同步到 DNS 平台。` : ''}
+        confirmLabel="删除"
+        destructive
+        loading={remove.isPending}
+        error={remove.error?.message ?? null}
+        onCancel={() => {
+          setPendingDelete(null);
+          remove.reset();
+        }}
+        onConfirm={() => pendingDelete && remove.mutate(pendingDelete.id)}
+      />
     </div>
   );
 }

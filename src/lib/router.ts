@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 
 export function navigate(path: string): void {
+  if (window.location.pathname + window.location.search === path) return;
   window.history.pushState(null, '', path);
   window.dispatchEvent(new Event('app:navigate'));
+  window.scrollTo(0, 0);
 }
 
 export function usePath(): string {

@@ -11,7 +11,7 @@ export function StatCard({ title, value, note, icon: Icon }: { title: string; va
             <p className="mt-2 text-3xl font-semibold">{value}</p>
             {note ? <p className="mt-2 text-xs text-muted-foreground">{note}</p> : null}
           </div>
-          <div className="rounded-xl bg-gradient-to-r from-indigo-500/20 to-fuchsia-500/20 p-3 text-indigo-200">
+          <div className="rounded-xl bg-gradient-to-r from-indigo-500/20 to-fuchsia-500/20 p-3 text-indigo-600 dark:text-indigo-200">
             <Icon className="h-6 w-6" />
           </div>
         </div>

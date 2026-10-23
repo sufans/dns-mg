@@ -1,6 +1,13 @@
 # Cloudflare DNS Manager
 
-生产级、单管理员、零外部后端服务的多域名 DNS 统一管理平台。基于 Cloudflare Pages + Pages Functions + D1 SQLite 构建，集中管理 DNSHE 与 DNSNEKO 两个平台的域名和 DNS 记录。
+生产级、单管理员、零外部后端服务的多域名 DNS 统一管理平台。基于 Cloudflare Pages + Pages Functions + D1 SQLite 构建，集中管理 DNSHE、DNSNEKO 与 GLEAM 三个平台的域名和 DNS 记录。
+
+**当前版本要点**
+
+- 统一控制台：仪表盘、域名中心、域名详情、API 账号、分组管理、操作日志、备份恢复、系统设置。
+- 主题：支持浅色 / 深色 / 跟随系统，选择后立即生效并写入浏览器 `localStorage`；登录页同样可切换。
+- 响应式：桌面端固定侧边栏，移动端抽屉式菜单；未知路由显示 404 页面。
+- 安全：JWT + CSRF + 二次密码验证、AES-GCM 凭证加密、登录失败锁定、上游出口白名单。
 
 ## 项目架构
 
@@ -9,6 +16,7 @@
 │                      浏览器 (React SPA)                       │
 │  src/pages/  src/components/  src/hooks/  src/lib/           │
 │  LoginPage  DashboardPage  DomainsPage  AccountsPage ...     │
+│  GroupsPage  DomainDetailPage  SettingsPage  LogsPage ...    │
 │  TanStack React Query v5  ───  apiFetch() ──────────┐       │
 └──────────────────────────────────────────────────────┼──────┘
                                                        │
@@ -37,6 +45,7 @@
 │    platforms/     ← 上游 DNS 平台适配器                  │      │
 │      dnshe.ts    DNSHE V2 API (X-API-Key/Secret)       │      │
 │      dnsneko.ts  DNSNEKO API (X-DNSNEKO-*)             │      │
+│      gleam.ts    GLEAM API (X-API-Key)                 │      │
 │      factory.ts  适配器工厂函数                          │      │
 └──────────────────────┬──────────────────────────────────┘
                        │
@@ -60,7 +69,8 @@
   │
   ├─ 校验 ADMIN_USERNAME + ADMIN_PASSWORD_HASH (bcrypt)
   ├─ HMAC-SHA256 签发 JWT (含 csrf token, 24h 有效期)
-  ├─ Set-Cookie: __Host-dns_session (HttpOnly, Secure, SameSite=Strict)
+  ├─ Set-Cookie: __Host-dns_session (HTTPS) / dns_session (本地 HTTP)
+  │              HttpOnly, SameSite=Strict；HTTPS 下额外要求 Secure
   ├─ Set-Cookie: dns_csrf (Secure, SameSite=Strict, JS 可读)
   └─ 返回 { username, csrf, expiresIn }
 
@@ -128,12 +138,12 @@ npm run secret:password -- "你的强密码"
 
 | 配置项 | 值 |
 |--------|-----|
-| Framework preset | **None**（或 Vite，若可选） |
+| Framework preset | **None**（不使用 Vite 预设） |
 | Build command | `npm run build` |
 | Build output directory | `dist` |
 | Root directory | `/` |
 
-**重要：** 不要在 Pages 设置中指定 Framework preset 为 Vite，直接使用自定义命令。Cloudflare Pages 构建环境默认 `npm@10.x` / `node@22.x`。
+**重要：** 请选择 `None` 并手动填写构建命令与输出目录。Vite 预设会改写构建命令和输出路径，导致 `functions/` 与 `dist/` 的组合部署失败。Cloudflare Pages 构建环境默认 `npm@10.x` / `node@22.x`，满足 `engines.node >= 20.19.0`。
 
 ### 步骤 4：配置环境变量
 
@@ -248,29 +258,33 @@ Installing project dependencies: npm clean-install  ← 应成功完成
 cloudflare-dns-manager/
 ├── public/
 │   ├── _routes.json          # Pages Functions 路由清单（排除静态资源）
+│   ├── _redirects            # SPA 深链接回退（/domains/* 等直接访问不 404）
 │   └── favicon.svg
 ├── src/                      # React 前端 (SPA)
 │   ├── components/
 │   │   ├── layout/Shell.tsx  # 侧边栏 + 顶栏布局骨架
 │   │   ├── ui/               # 通用 UI 组件 (button, input, table, select...)
 │   │   ├── StatCard.tsx      # 统计卡片
+│   │   ├── ConfirmDialog.tsx # 通用确认弹窗
 │   │   └── ConfirmPasswordDialog.tsx  # 二次密码验证弹窗
 │   ├── hooks/useAuth.ts      # 认证状态 Hook
 │   ├── lib/
 │   │   ├── api.ts            # HTTP 客户端 (自动 CSRF、统一错误处理)
 │   │   ├── query.ts          # TanStack React Query Client 实例
 │   │   ├── router.ts         # 前端路由 (history pushState)
+│   │   ├── theme.ts          # 主题状态（浅色/深色/跟随系统）
 │   │   └── utils.ts          # 日期格式化等工具函数
 │   ├── pages/                # 页面组件
 │   │   ├── LoginPage.tsx     # 登录页
 │   │   ├── DashboardPage.tsx # 仪表盘 (统计概览)
 │   │   ├── AccountsPage.tsx  # API 账号管理
-│   │   ├── （分组管理暂无独立页面，通过账号编辑时的分组下拉维护）
+│   │   ├── GroupsPage.tsx    # 分组管理 (增删改 + 颜色标识)
 │   │   ├── DomainsPage.tsx   # 跨平台域名列表
 │   │   ├── DomainDetailPage.tsx # 域名详情 + DNS 记录管理
 │   │   ├── SettingsPage.tsx  # 系统设置
 │   │   ├── LogsPage.tsx      # 操作日志
-│   │   └── BackupPage.tsx   # 备份恢复
+│   │   ├── BackupPage.tsx    # 备份恢复
+│   │   └── NotFoundPage.tsx  # 404 页面
 │   ├── types/models.ts       # 前端类型定义
 │   ├── App.tsx               # 应用入口 (路由分发)
 │   ├── index.css             # Tailwind + CSS 变量
@@ -325,8 +339,11 @@ cloudflare-dns-manager/
 |------|-------------|----------|----------|
 | DNSHE | `https://api005.dnshe.com/index.php?m=domain_hub` | `X-API-Key` + `X-API-Secret` HTTP Header | `subdomains`, `dns_records` |
 | DNSNEKO | `https://www.dnsneko.com/api/v1/dns` | `X-DNSNEKO-USERNAME` + `X-DNSNEKO-API-KEY` HTTP Header | `/domains`, `/records` |
+| GLEAM | `https://sld.0n.pub/api/v1/open` | `X-API-Key` HTTP Header | `/domains`, `/records` |
 
 所有上游 API 调用均在 Cloudflare Pages Functions 端完成，浏览器不会接触上游 API 密钥。
+
+`functions/_shared/fetcher.ts` 维护出口主机白名单，只允许上述三个域名。新增平台时必须同步更新白名单，否则请求会被拒绝。
 
 ### 限流参数
 
@@ -334,6 +351,19 @@ cloudflare-dns-manager/
 |------|----------|------|
 | DNSHE | 55 次/窗口 | 60 秒 |
 | DNSNEKO | 28 次/窗口 (账号), 58 次/窗口 (IP) | 60 秒 |
+| GLEAM | 55 次/窗口 | 60 秒 |
+
+计数通过 `api_rate_limits` 表原子 upsert 完成，多标签页并发刷新不会突破窗口上限。
+
+### 平台能力差异
+
+| 能力 | DNSHE | DNSNEKO | GLEAM |
+|------|-------|---------|-------|
+| 域名列表 / 解析记录 CRUD | ✅ | ✅ | ✅ |
+| 记录暂停 / 启用 | ❌ | ✅ | ❌ |
+| 官方批量操作 | ❌ | ✅ | ❌ |
+
+界面会按平台隐藏不支持的操作按钮；直接调用不支持的接口会返回 `400 unsupported_operation`。
 
 ## 本地开发
 
@@ -408,10 +438,10 @@ export default {
 本项目的安全设计说明详见 `docs/SECURITY.md`。要点：
 
 - **认证**：单管理员，凭证全部来自 Cloudflare 环境变量，bcrypt 哈希，不上传明文
-- **会话**：JWT 24 小时过期，HttpOnly `__Host-dns_session` Cookie
+- **会话**：JWT 24 小时过期，HttpOnly 会话 Cookie（HTTPS 用 `__Host-dns_session`，本地 HTTP 用 `dns_session`）
 - **CSRF**：非 GET 请求必须携带 `X-CSRF-Token` + `Origin`/`Referer` 同源校验
 - **加密存储**：API 密钥使用 AES-GCM 加密后存入 D1，密钥由 `ENCRYPTION_KEY` 提供
-- **登录保护**：同一 IP 5 次失败后锁定 15 分钟
+- **登录保护**：按 `IP + 用户名` 组合计数，连续 5 次失败锁定 15 分钟；换 IP 无法重置目标账号的计数
 - **HTTP 安全头**：CSP、X-Frame-Options、X-Content-Type-Options、Referrer-Policy 等
 - **输入校验**：所有 API 输入使用 Zod schema 校验
 - **操作审计**：全部关键操作写入 `operation_logs` 表
@@ -423,6 +453,22 @@ export default {
 3. 一旦部署后修改 `ENCRYPTION_KEY`，所有已存储的 API 账号密钥将无法解密，需要重新录入
 4. 如果修改了 `JWT_SECRET`，所有已登录会话立即失效
 5. 部署到 Cloudflare Pages 后 Domain 会自动分配 `*.pages.dev` 二级域名，生产使用建议绑定自定义域名
+
+## 界面功能说明
+
+| 页面 | 可用操作 |
+|------|----------|
+| 登录页 | 登录、切换浅色/深色 |
+| 仪表盘 | 统计卡片、到期风险 Top 10、手动刷新（清空服务端缓存后重拉） |
+| 域名中心 | 关键词搜索、平台筛选、状态筛选、刷新、导出 CSV（带 BOM，Excel 打开不乱码）、进入域名详情 |
+| 域名详情 | 新增/编辑/删除解析记录；DNSNEKO 额外支持暂停/启用记录 |
+| API 账号 | 新增、编辑（凭证留空表示不修改）、启用/禁用、连接检测、删除；敏感操作需二次密码 |
+| 分组管理 | 新建、重命名、改色、删除（账号自动变为未分组） |
+| 操作日志 | 查看最近 200 条、清理过期日志（需确认） |
+| 备份恢复 | 导出加密备份、粘贴完整 JSON 或 `encryptedPayload` 恢复（需二次密码） |
+| 系统设置 | 主题（立即生效）、自动刷新间隔、日志保留天数、邮件提醒阈值 |
+
+主题选择会写入 `localStorage.dns-theme`，因此刷新和跨页面保持一致；`system` 模式会跟随操作系统外观变化。
 
 ## 许可
 

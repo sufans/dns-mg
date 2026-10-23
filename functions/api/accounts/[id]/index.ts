@@ -13,8 +13,13 @@ function idFrom(params: Record<string, string | string[]>): number {
 
 function mergeConfig(platform: string, oldConfig: ApiAccountConfig, credentials?: Record<string, string>): ApiAccountConfig {
   if (!credentials) return oldConfig;
-  if (platform === 'dnshe') return { apiKey: credentials.apiKey ?? oldConfig.apiKey, apiSecret: credentials.apiSecret ?? oldConfig.apiSecret };
-  return { username: credentials.username ?? oldConfig.username, apiKey: credentials.apiKey ?? oldConfig.apiKey };
+  // An empty string means "keep the stored value": the edit form never echoes
+  // secrets back, so untouched fields arrive blank.
+  const pick = (next: string | undefined, previous: string | undefined): string => (next ? next : previous ?? '');
+  if (platform === 'dnshe') {
+    return { apiKey: pick(credentials.apiKey, oldConfig.apiKey), apiSecret: pick(credentials.apiSecret, oldConfig.apiSecret) };
+  }
+  return { username: pick(credentials.username, oldConfig.username), apiKey: pick(credentials.apiKey, oldConfig.apiKey) };
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
