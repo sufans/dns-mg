@@ -1,0 +1,14 @@
+# Security headers for the SPA document and static assets served by Cloudflare
+# Pages. Functions responses set their own headers in functions/_shared/response.ts.
+#
+# The sha256 below allows the single inline theme bootstrap in index.html while
+# keeping `script-src 'self'`. Editing that inline script invalidates the hash;
+# functions/_shared/__tests__/security-headers.test.ts fails when they drift.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'sha256-WLBnzSyzK36oSdbvap25DKKeNtwk+cdGRyYZ6AykoJY='; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: no-referrer
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Resource-Policy: same-origin

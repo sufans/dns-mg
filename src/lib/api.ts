@@ -28,15 +28,34 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   const response = await fetch(path, { ...init, headers, credentials: 'include' });
   if (response.status === 204) return undefined as T;
   const contentType = response.headers.get('Content-Type') ?? '';
-  if (contentType.includes('text/csv')) return (await response.text()) as T;
-  const envelope = (await response.json()) as ApiEnvelope<T>;
-  if (!response.ok || !envelope.ok) {
+  if (contentType.includes('text/csv')) {
+    // Check the status first: an error page must never be saved as a CSV file.
+    if (!response.ok) throw new ApiError(`导出失败（HTTP ${response.status}）`, response.status, null, null);
+    return (await response.text()) as T;
+  }
+  const envelope = await readEnvelope<T>(response);
+  if (!response.ok || !envelope?.ok) {
     // Navigate through the router so the SPA re-renders; a bare replaceState
     // would change the URL but leave the app showing the previous (blank) view.
     if (response.status === 401 && location.pathname !== '/login') navigate('/login');
-    throw new ApiError(envelope.error ?? '请求失败', response.status, envelope.code, envelope.requestId);
+    throw new ApiError(
+      envelope?.error ?? `请求失败（HTTP ${response.status}）`,
+      response.status,
+      envelope?.code ?? null,
+      envelope?.requestId ?? null
+    );
   }
   return envelope.data as T;
+}
+
+/** Tolerates non-JSON error bodies (HTML from a proxy, empty 5xx) instead of throwing SyntaxError. */
+async function readEnvelope<T>(response: Response): Promise<ApiEnvelope<T> | null> {
+  if (!(response.headers.get('Content-Type') ?? '').includes('application/json')) return null;
+  try {
+    return (await response.json()) as ApiEnvelope<T>;
+  } catch {
+    return null;
+  }
 }
 
 export const api = {

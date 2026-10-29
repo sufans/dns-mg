@@ -1,25 +1,15 @@
 import { requireAuth, requireSecondVerification } from '../../../_shared/auth';
+import { buildAccountConfig, mergeAccountConfig } from '../../../_shared/account-config';
 import { encryptJson } from '../../../_shared/crypto';
 import { decryptAccountConfig, getAccountRow, toPublicAccount } from '../../../_shared/db';
 import { logOperation } from '../../../_shared/logger';
 import { errorResponse, jsonResponse, noContent, notFound } from '../../../_shared/response';
 import { updateAccountSchema } from '../../../_shared/validators';
-import type { ApiAccountConfig, Env } from '../../../_shared/types';
+import type { Env } from '../../../_shared/types';
 
 function idFrom(params: Record<string, string | string[]>): number {
   const value = params.id;
   return Number(Array.isArray(value) ? value[0] : value);
-}
-
-function mergeConfig(platform: string, oldConfig: ApiAccountConfig, credentials?: Record<string, string>): ApiAccountConfig {
-  if (!credentials) return oldConfig;
-  // An empty string means "keep the stored value": the edit form never echoes
-  // secrets back, so untouched fields arrive blank.
-  const pick = (next: string | undefined, previous: string | undefined): string => (next ? next : previous ?? '');
-  if (platform === 'dnshe') {
-    return { apiKey: pick(credentials.apiKey, oldConfig.apiKey), apiSecret: pick(credentials.apiSecret, oldConfig.apiSecret) };
-  }
-  return { username: pick(credentials.username, oldConfig.username), apiKey: pick(credentials.apiKey, oldConfig.apiKey) };
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, params }) => {
@@ -39,7 +29,17 @@ export const onRequestPut: PagesFunction<Env> = async ({ request, env, params })
   if (!row) return notFound();
   const input = updateAccountSchema.parse(await request.json());
   const oldConfig = await decryptAccountConfig(env, row);
-  const newConfig = mergeConfig(input.platform ?? row.platform, oldConfig, input.credentials);
+  const platform = input.platform ?? row.platform;
+  const platformChanged = platform !== row.platform;
+  if (platformChanged && !input.credentials) {
+    return errorResponse('切换平台时必须重新提交该平台的凭证', 400, 'credentials_required');
+  }
+  // A config built for one platform has a different shape than the target one,
+  // so platform switches must start from the submitted credentials alone.
+  const newConfig = input.credentials
+    ? (platformChanged ? buildAccountConfig(platform, input.credentials) : mergeAccountConfig(platform, oldConfig, input.credentials))
+    : oldConfig;
+  if (!newConfig) return errorResponse('凭证不完整，请填写该平台要求的全部字段', 400, 'invalid_credentials');
   if (input.credentials || input.platform || input.enabled === false) {
     const second = await requireSecondVerification(input.verifyPassword, env);
     if (second) return second;
