@@ -123,6 +123,7 @@ export function DomainDetailPage({ accountId, domainId }: { accountId: string; d
   const domain = query.data?.domain;
   const records = query.data?.records ?? [];
   const supportsServerBatch = domain?.platform === 'dnsneko';
+  const supportsStatus = domain?.platform === 'dnsneko';
   const selectedRecords = records.filter((record) => selected.has(record.id));
 
   // Drop selections that no longer exist after a refresh or deletion.
@@ -151,6 +152,7 @@ export function DomainDetailPage({ accountId, domainId }: { accountId: string; d
   async function runBatch(operation: 'status' | 'delete' | 'ttl' | 'line', value?: string | number | boolean): Promise<void> {
     const targets = selectedRecords;
     if (targets.length === 0) return;
+    if (operation === 'status' && !supportsStatus) return;
     setBatchPending(true);
     setBatchResult(null);
     setBatchProgress(null);
@@ -251,6 +253,7 @@ export function DomainDetailPage({ accountId, domainId }: { accountId: string; d
             <RecordBatchBar
               selectedCount={selected.size}
               supportsServerBatch={supportsServerBatch}
+              supportsStatus={supportsStatus}
               pending={batchPending}
               progress={batchProgress}
               result={batchResult}

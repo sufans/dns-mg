@@ -20,6 +20,7 @@ export interface BatchResult {
 export function RecordBatchBar({
   selectedCount,
   supportsServerBatch,
+  supportsStatus,
   pending,
   progress,
   result,
@@ -29,6 +30,7 @@ export function RecordBatchBar({
 }: {
   selectedCount: number;
   supportsServerBatch: boolean;
+  supportsStatus: boolean;
   pending: boolean;
   progress: { done: number; total: number } | null;
   result: BatchResult | null;
@@ -52,12 +54,20 @@ export function RecordBatchBar({
           {supportsServerBatch ? '官方批量接口' : '逐条执行（并发 2）'}
         </span>
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="outline" disabled={pending} onClick={() => onRun('status', true)}>
-            <Play className="mr-1 h-4 w-4" />启用
-          </Button>
-          <Button size="sm" variant="outline" disabled={pending} onClick={() => onRun('status', false)}>
-            <Pause className="mr-1 h-4 w-4" />暂停
-          </Button>
+          {supportsStatus ? (
+            <>
+              <Button size="sm" variant="outline" disabled={pending} onClick={() => onRun('status', true)}>
+                <Play className="mr-1 h-4 w-4" />启用
+              </Button>
+              <Button size="sm" variant="outline" disabled={pending} onClick={() => onRun('status', false)}>
+                <Pause className="mr-1 h-4 w-4" />暂停
+              </Button>
+            </>
+          ) : (
+            // DNSHE / GLEAM have no pause/resume upstream call; hide instead of
+            // letting every selected record fail with unsupported_operation.
+            <span className="text-xs text-muted-foreground">当前平台不支持暂停/启用</span>
+          )}
           <Button size="sm" variant="ghost" disabled={pending} onClick={onRequestDelete}>
             <Trash2 className="mr-1 h-4 w-4" />删除
           </Button>
